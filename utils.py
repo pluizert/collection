@@ -39,7 +39,10 @@ def init_db():
     alterations = {
         "quantity": "INTEGER DEFAULT 1",
         "retail_price": "REAL DEFAULT 0.0",
-        "current_price": "REAL DEFAULT 0.0"
+        "current_price": "REAL DEFAULT 0.0",
+        "theme": "TEXT DEFAULT 'Onbekend'",
+        "condition": "TEXT DEFAULT 'Nieuw (MISB)'",
+        "retired": "INTEGER DEFAULT 0"
     }
     
     for col, col_type in alterations.items():
@@ -216,13 +219,13 @@ session.headers.update({
 
 def fetch_lego_details_and_image(set_num):
     """
-    Probeert de naam, afbeelding, adviesprijs (retail_price) en huidige prijs van de Lego set te downloaden van Brickset.
+    Probeert de naam, afbeelding, adviesprijs (retail_price), huidige prijs, thema en retired-status van de Lego set te downloaden van Brickset.
     Slaat de afbeelding lokaal op.
-    Returns: (set_name, local_image_path, retail_price, current_price)
+    Returns: (set_name, local_image_path, retail_price, current_price, theme, retired)
     """
     clean_num = clean_set_number(set_num)
     if not clean_num:
-        return "Onbekende set", None, 0.0, 0.0
+        return "Onbekende set", None, 0.0, 0.0, "Onbekend", 0
 
     brickset_num = clean_num if "-" in clean_num else f"{clean_num}-1"
     base_num = clean_num.split("-")[0]
@@ -231,6 +234,8 @@ def fetch_lego_details_and_image(set_num):
     local_image_path = os.path.join(IMAGE_DIR, f"{base_num}.jpg").replace('\\', '/')
     retail_price = 0.0
     current_price = 0.0
+    theme = "Onbekend"
+    retired = 0
 
     url = f"https://brickset.com/sets/{brickset_num}"
     try:
@@ -254,6 +259,7 @@ def fetch_lego_details_and_image(set_num):
                     dds = dl.find_all("dd")
                     rrp_text = ""
                     current_val_text = ""
+                    exit_text = ""
                     for dt, dd in zip(dts, dds):
                         label = dt.get_text().strip().lower()
                         value = dd.get_text().strip()
@@ -263,8 +269,45 @@ def fetch_lego_details_and_image(set_num):
                             rrp_text = value
                         elif "current value" in label:
                             current_val_text = value
+                        elif label == "theme":
+                            theme = value
+                        elif "launch/exit" in label:
+                            exit_text = value
                     
                     retail_price, current_price = parse_brickset_prices(rrp_text, current_val_text)
+                    
+                    if exit_text:
+                        if "retired" in exit_text.lower():
+                            retired = 1
+                        elif "-" in exit_text:
+                            parts = exit_text.split("-")
+                            if len(parts) == 2:
+                                exit_date_str = parts[1].strip()
+                                match_year = re.search(r'\b(\d{2,4})\b$', exit_date_str)
+                                if match_year:
+                                    year = int(match_year.group(1))
+                                    if year < 100:
+                                        year += 2000
+                                    current_year = datetime.now().year
+                                    if year < current_year:
+                                        retired = 1
+                                    elif year == current_year:
+                                        months = {"Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6, "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12}
+                                        month = 12
+                                        for m_name, m_val in months.items():
+                                            if m_name in exit_date_str:
+                                                month = m_val
+                                                break
+                                        day = 31
+                                        match_day = re.search(r'^\d+', exit_date_str)
+                                        if match_day:
+                                            day = int(match_day.group(0))
+                                        try:
+                                            exit_dt = datetime(year, month, day)
+                                            if exit_dt < datetime.now():
+                                                retired = 1
+                                        except Exception:
+                                            pass
                 
                 # Als naam niet in de tabel stond, gebruik dan de h1 tag
                 if set_name == f"Lego Set {base_num}":
@@ -367,10 +410,10 @@ def fetch_lego_details_and_image(set_num):
             except Exception as e:
                 print(f"Fout bij downloaden van {cdn_url}: {e}")
 
-    return set_name, (local_image_path if os.path.exists(local_image_path) else None), retail_price, current_price
+    return set_name, (local_image_path if os.path.exists(local_image_path) else None), retail_price, current_price, theme, retired
 
 # Database bewerkingen
-def add_lego_set(set_number, name=None, purchase_date=None, purchase_price=None, image_path=None, quantity=1, retail_price=None, current_price=None):
+def add_lego_set(set_number, name=None, purchase_date=None, purchase_price=None, image_path=None, quantity=1, retail_price=None, current_price=None, theme=None, condition="Nieuw (MISB)", retired=None):
     clean_num = clean_set_number(set_number)
     base_num = clean_num.split("-")[0] if "-" in clean_num else clean_num
     
@@ -378,8 +421,8 @@ def add_lego_set(set_number, name=None, purchase_date=None, purchase_price=None,
         return False
         
     # Als er geen naam, afbeelding, of prijzen zijn meegegeven, probeer deze op te halen
-    if not name or not image_path or retail_price is None or current_price is None:
-        fetched_name, fetched_img, fetched_retail, fetched_current = fetch_lego_details_and_image(clean_num)
+    if not name or not image_path or retail_price is None or current_price is None or theme is None or retired is None:
+        fetched_name, fetched_img, fetched_retail, fetched_current, fetched_theme, fetched_retired = fetch_lego_details_and_image(clean_num)
         if not name:
             name = fetched_name
         if not image_path:
@@ -388,13 +431,17 @@ def add_lego_set(set_number, name=None, purchase_date=None, purchase_price=None,
             retail_price = fetched_retail
         if current_price is None:
             current_price = fetched_current
+        if theme is None:
+            theme = fetched_theme
+        if retired is None:
+            retired = fetched_retired
 
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO lego_sets (set_number, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (base_num, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price))
+        INSERT INTO lego_sets (set_number, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price, theme, condition, retired)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (base_num, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price, theme, condition, retired))
     conn.commit()
     conn.close()
     return True
@@ -433,7 +480,7 @@ def delete_set(set_id):
     conn.close()
     return True
 
-def update_set(set_id, set_number, name, purchase_date, purchase_price, quantity=1, retail_price=0.0, current_price=0.0):
+def update_set(set_id, set_number, name, purchase_date, purchase_price, quantity=1, retail_price=0.0, current_price=0.0, theme="Onbekend", condition="Nieuw (MISB)", retired=0):
     clean_num = clean_set_number(set_number)
     base_num = clean_num.split("-")[0] if "-" in clean_num else clean_num
     
@@ -441,36 +488,38 @@ def update_set(set_id, set_number, name, purchase_date, purchase_price, quantity
     cursor = conn.cursor()
     
     # Controleer of afbeelding veranderd moet worden
-    cursor.execute("SELECT set_number, image_path, retail_price, current_price FROM lego_sets WHERE id = ?", (set_id,))
+    cursor.execute("SELECT set_number, image_path, retail_price, current_price, theme, condition, retired FROM lego_sets WHERE id = ?", (set_id,))
     row = cursor.fetchone()
     image_path = row["image_path"] if row else None
     
     if row and row["set_number"] != base_num:
-        _, fetched_img, fetched_retail, fetched_current = fetch_lego_details_and_image(clean_num)
+        _, fetched_img, fetched_retail, fetched_current, fetched_theme, fetched_retired = fetch_lego_details_and_image(clean_num)
         if fetched_img:
             image_path = fetched_img
         if fetched_retail:
             retail_price = fetched_retail
         if fetched_current:
             current_price = fetched_current
+        theme = fetched_theme
+        retired = fetched_retired
             
     cursor.execute("""
         UPDATE lego_sets
-        SET set_number = ?, name = ?, purchase_date = ?, purchase_price = ?, image_path = ?, quantity = ?, retail_price = ?, current_price = ?
+        SET set_number = ?, name = ?, purchase_date = ?, purchase_price = ?, image_path = ?, quantity = ?, retail_price = ?, current_price = ?, theme = ?, condition = ?, retired = ?
         WHERE id = ?
-    """, (base_num, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price, set_id))
+    """, (base_num, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price, theme, condition, retired, set_id))
     conn.commit()
     conn.close()
     return True
 
 def refresh_all_prices():
-    """Haalt voor alle sets in de DB de nieuwste marktprijzen en namen op"""
+    """Haalt voor alle sets in de DB de nieuwste marktprijzen, namen, thema's en retired-status op"""
     sets = get_all_sets()
     conn = get_db_connection()
     cursor = conn.cursor()
     
     for s in sets:
-        name, _, rrp, current = fetch_lego_details_and_image(s["set_number"])
+        name, _, rrp, current, theme, retired = fetch_lego_details_and_image(s["set_number"])
         
         # Update alleen de naam als deze momenteel de standaard 'Lego Set XXX' is. 
         # Anders behouden we ALTIJD de naam die de gebruiker in Excel had staan of zelf heeft bewerkt!
@@ -482,9 +531,9 @@ def refresh_all_prices():
         
         cursor.execute("""
             UPDATE lego_sets
-            SET name = ?, retail_price = ?, current_price = ?
+            SET name = ?, retail_price = ?, current_price = ?, theme = ?, retired = ?
             WHERE id = ?
-        """, (final_name, rrp, current, s["id"]))
+        """, (final_name, rrp, current, theme, retired, s["id"]))
             
     conn.commit()
     conn.close()

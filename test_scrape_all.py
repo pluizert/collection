@@ -9,5 +9,5 @@ sets_to_test = [
 ]
 
 for s in sets_to_test:
-    name, _, rrp, current = fetch_lego_details_and_image(s)
-    print(f"Set: {s} | Naam: {name} | RRP: €{rrp} | Current: €{current}")
+    name, _, rrp, current, theme, retired = fetch_lego_details_and_image(s)
+    print(f"Set: {s} | Naam: {name} | RRP: €{rrp} | Current: €{current} | Thema: {theme} | Retired: {retired}")

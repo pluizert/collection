@@ -194,6 +194,11 @@ if menu == "📊 Dashboard":
         with col4:
             st.metric("Duurste Set (Marktwaarde)", f"€ {most_expensive_price:.2f}", help=most_expensive_set)
             
+        # Status en conditie sub-metrics bar
+        retired_count = int(df[df['retired'] == 1]['quantity'].sum()) if 'retired' in df.columns else 0
+        active_count = int(df[df['retired'] == 0]['quantity'].sum()) if 'retired' in df.columns else total_items
+        st.markdown(f"**Verzameling Status:** 🕒 **{retired_count}** stuks uit de handel (Retired) | 🟢 **{active_count}** stuks nog actief in de handel")
+        
         st.markdown("---")
         
         # Twee kolommen voor grafieken/overzichten
@@ -223,6 +228,39 @@ if menu == "📊 Dashboard":
             yearly_stats.columns = ["Jaar", "Investering (€)", "Huidige Marktwaarde (€)"]
             st.bar_chart(yearly_stats, x='Jaar', y=["Investering (€)", "Huidige Marktwaarde (€)"], color=["#FF0000", "#00FF00"])
 
+        # Thema & Status Analyse Sectie
+        st.markdown("---")
+        st.subheader("🎨 Thema & Portfolio Analyse")
+        theme_col1, theme_col2 = st.columns(2)
+        
+        with theme_col1:
+            st.markdown("#### Waarde en Investering per Lego Thema")
+            df['total_cost'] = df['purchase_price'] * df['quantity']
+            df['total_value'] = df['current_price'] * df['quantity']
+            # Gebruik 'theme' indien beschikbaar, anders 'Onbekend'
+            theme_col = 'theme' if 'theme' in df.columns else 'Onbekend'
+            if theme_col not in df.columns:
+                df[theme_col] = 'Onbekend'
+            
+            theme_stats = df.groupby(theme_col)[['total_cost', 'total_value']].sum().reset_index()
+            theme_stats.columns = ["Thema", "Investering (€)", "Huidige Marktwaarde (€)"]
+            st.bar_chart(theme_stats, x='Thema', y=["Investering (€)", "Huidige Marktwaarde (€)"], color=["#FFD500", "#E60012"])
+            
+        with theme_col2:
+            st.markdown("#### Status & Rendement per Thema")
+            theme_summary = df.groupby(theme_col).agg(
+                Unieke_Sets=('id', 'count'),
+                Totaal_Stuks=('quantity', 'sum'),
+                Investering=('total_cost', 'sum'),
+                Huidige_Waarde=('total_value', 'sum')
+            ).reset_index()
+            theme_summary['Winst / Verlies'] = theme_summary['Huidige_Waarde'] - theme_summary['Investering']
+            theme_summary['ROI (%)'] = (theme_summary['Winst / Verlies'] / theme_summary['Investering'] * 100).round(1)
+            
+            # Hernoem en formatteer
+            theme_summary.columns = ["Thema", "Sets", "Stuks", "Investering (€)", "Marktwaarde (€)", "Winst/Verlies (€)", "ROI (%)"]
+            st.dataframe(theme_summary, use_container_width=True, hide_index=True)
+
 # --- MIJN VOORRAAD PAGE ---
 elif menu == "🧱 Mijn Voorraad":
     st.markdown("<h1 class='main-header'>🧱 Mijn Lego Voorraad</h1>", unsafe_allow_html=True)
@@ -235,15 +273,32 @@ elif menu == "🧱 Mijn Voorraad":
         df = pd.DataFrame(sets)
         
         # Filteren en zoeken
-        search_query = st.text_input("🔍 Zoek op setnummer of naam", "")
+        col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
+        with col_s1:
+            search_query = st.text_input("🔍 Zoek op setnummer of naam", "")
+        with col_s2:
+            condition_options = ["Alle condities"]
+            if 'condition' in df.columns:
+                condition_options += sorted([str(c) for c in df['condition'].unique() if c])
+            condition_filter = st.selectbox("📝 Conditie", condition_options)
+        with col_s3:
+            status_filter = st.selectbox("🕒 Status", ["Alle statussen", "Alleen uit de handel (Retired)", "Alleen actief in de handel"])
+            
+        # Toepassen filters
+        filtered_df = df.copy()
         
         if search_query:
-            filtered_df = df[
-                df['set_number'].str.contains(search_query, case=False, na=False) |
-                df['name'].str.contains(search_query, case=False, na=False)
+            filtered_df = filtered_df[
+                filtered_df['set_number'].str.contains(search_query, case=False, na=False) |
+                filtered_df['name'].str.contains(search_query, case=False, na=False)
             ]
-        else:
-            filtered_df = df
+            
+        if 'condition' in filtered_df.columns and condition_filter != "Alle condities":
+            filtered_df = filtered_df[filtered_df['condition'] == condition_filter]
+            
+        if 'retired' in filtered_df.columns and status_filter != "Alle statussen":
+            is_retired_val = 1 if status_filter == "Alleen uit de handel (Retired)" else 0
+            filtered_df = filtered_df[filtered_df['retired'] == is_retired_val]
             
         st.write(f"Toont {len(filtered_df)} van de {len(df)} sets")
         
@@ -266,16 +321,22 @@ elif menu == "🧱 Mijn Voorraad":
                         
                         profit_color = "#00cc44" if profit_item >= 0 else "#ff3333"
                         
+                        theme_display = item['theme'] if 'theme' in item else 'Onbekend'
+                        cond_display = item['condition'] if 'condition' in item else 'Nieuw (MISB)'
+                        retired_badge = "🕒 <span style='color:#E60012; font-weight:bold;'>Retired</span>" if ('retired' in item and item['retired'] == 1) else "🟢 <span style='color:#00cc44; font-weight:bold;'>Actief</span>"
+                        
                         st.markdown(f"""
                         <div class="lego-card">
                             <h4 style="margin:0; color:#E60012;">{item['name']}</h4>
-                            <p style="margin:5px 0; color:#666;">Set {item['set_number']}</p>
+                            <p style="margin:5px 0; color:#666;">Set {item['set_number']} | {theme_display}</p>
                             <p style="margin:0; font-size: 0.9em;">Aankoopprijs: € {item['purchase_price']:.2f} (x{item['quantity']})</p>
                             <p style="margin:0; font-size: 0.9em;">Huidige marktprijs: € {item['current_price']:.2f}</p>
                             <p style="margin:0; font-weight:bold; color:{profit_color};">
                                 Rendement: € {profit_item:+.2f} ({roi_item:+.1f}%)
                             </p>
-                            <p style="font-size:0.85em; margin:0; color:#888;">Gekocht: {item['purchase_date']}</p>
+                            <p style="margin:0; font-size: 0.85em; color:#555;">Conditie: <strong>{cond_display}</strong></p>
+                            <p style="margin:0; font-size: 0.85em;">Status: {retired_badge}</p>
+                            <p style="font-size:0.85em; margin:5px 0 0 0; color:#888;">Gekocht: {item['purchase_date']}</p>
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -292,10 +353,24 @@ elif menu == "🧱 Mijn Voorraad":
                                 new_name = st.text_input("Naam aanpassen", value=item['name'], key=f"n_{item['id']}")
                                 new_date = st.date_input("Datum aanpassen", value=datetime.strptime(item['purchase_date'], '%Y-%m-%d').date(), key=f"d_{item['id']}")
                                 
+                                # Extra bewerkingsvelden
+                                current_theme_val = item['theme'] if 'theme' in item else "Onbekend"
+                                new_theme = st.text_input("Thema aanpassen", value=current_theme_val, key=f"theme_{item['id']}")
+                                
+                                current_cond_val = item['condition'] if 'condition' in item else "Nieuw (MISB)"
+                                cond_options = ["Nieuw (MISB)", "Nieuw (BNIB)", "Gebruikt met doos", "Gebruikt zonder doos"]
+                                if current_cond_val not in cond_options:
+                                    cond_options.append(current_cond_val)
+                                new_cond = st.selectbox("Conditie aanpassen", cond_options, index=cond_options.index(current_cond_val), key=f"cond_{item['id']}")
+                                
+                                current_ret_val = int(item['retired']) if 'retired' in item else 0
+                                new_ret = st.selectbox("Status aanpassen", ["Actief (In de handel)", "Retired (Uit de handel)"], index=current_ret_val, key=f"ret_{item['id']}")
+                                new_ret_int = 1 if new_ret == "Retired (Uit de handel)" else 0
+                                
                                 col_upd, col_del = st.columns(2)
                                 with col_upd:
                                     if st.button("Opslaan", key=f"save_{item['id']}"):
-                                        update_set(item['id'], item['set_number'], new_name, new_date.strftime('%Y-%m-%d'), new_price, new_qty, new_retail_price, new_current_price)
+                                        update_set(item['id'], item['set_number'], new_name, new_date.strftime('%Y-%m-%d'), new_price, new_qty, new_retail_price, new_current_price, new_theme, new_cond, new_ret_int)
                                         st.success("Opgeslagen!")
                                         st.rerun()
                                 with col_del:
@@ -306,10 +381,18 @@ elif menu == "🧱 Mijn Voorraad":
                                     
         else:
             # Gedetailleerde lijstweergave
-            display_df = filtered_df[["id", "set_number", "name", "purchase_date", "purchase_price", "current_price", "quantity"]].copy()
+            cols_to_use = ["id", "set_number", "name", "purchase_date", "purchase_price", "current_price", "quantity"]
+            for col in ["theme", "condition", "retired"]:
+                if col in filtered_df.columns:
+                    cols_to_use.append(col)
+                    
+            display_df = filtered_df[cols_to_use].copy()
             display_df["Totaal Aankoop (€)"] = display_df["purchase_price"] * display_df["quantity"]
             display_df["Totaal Marktwaarde (€)"] = display_df["current_price"] * display_df["quantity"]
             display_df["Winst/Verlies (€)"] = display_df["Totaal Marktwaarde (€)"] - display_df["Totaal Aankoop (€)"]
+            
+            if "retired" in display_df.columns:
+                display_df["retired"] = display_df["retired"].map({1: "🕒 Retired", 0: "🟢 Actief"})
             
             st.dataframe(
                 display_df.rename(
@@ -319,7 +402,10 @@ elif menu == "🧱 Mijn Voorraad":
                         "purchase_date": "Aankoopdatum",
                         "purchase_price": "Aankoopprijs (€)",
                         "current_price": "Marktprijs p/s (€)",
-                        "quantity": "Aantal"
+                        "quantity": "Aantal",
+                        "theme": "Thema",
+                        "condition": "Conditie",
+                        "retired": "Status"
                     }
                 ),
                 use_container_width=True,
@@ -343,16 +429,28 @@ elif menu == "🧱 Mijn Voorraad":
                         edit_name = st.text_input("Setnaam", value=set_to_edit['name'], key=f"edit_name_list_{selected_set_id}")
                         edit_num = st.text_input("Setnummer", value=set_to_edit['set_number'], key=f"edit_num_list_{selected_set_id}")
                         edit_qty = st.number_input("Aantal stuks", value=int(set_to_edit['quantity']), min_value=1, step=1, key=f"edit_qty_list_{selected_set_id}")
+                        
+                        edit_theme = st.text_input("Thema", value=set_to_edit['theme'] if 'theme' in set_to_edit else "Onbekend", key=f"edit_theme_list_{selected_set_id}")
                     with edit_col2:
                         edit_price = st.number_input("Aankoopprijs p/s (€)", value=float(set_to_edit['purchase_price']), key=f"edit_price_list_{selected_set_id}")
                         edit_current = st.number_input("Huidige marktprijs p/s (€)", value=float(set_to_edit['current_price']), key=f"edit_current_list_{selected_set_id}")
                         edit_retail = st.number_input("Adviesprijs (RRP) (€)", value=float(set_to_edit['retail_price']), key=f"edit_retail_list_{selected_set_id}")
                         edit_date = st.date_input("Aankoopdatum", value=datetime.strptime(set_to_edit['purchase_date'], '%Y-%m-%d').date(), key=f"edit_date_list_{selected_set_id}")
+                        
+                        edit_cond_val = set_to_edit['condition'] if 'condition' in set_to_edit else "Nieuw (MISB)"
+                        cond_list_opts = ["Nieuw (MISB)", "Nieuw (BNIB)", "Gebruikt met doos", "Gebruikt zonder doos"]
+                        if edit_cond_val not in cond_list_opts:
+                            cond_list_opts.append(edit_cond_val)
+                        edit_cond = st.selectbox("Conditie", cond_list_opts, index=cond_list_opts.index(edit_cond_val), key=f"edit_cond_list_{selected_set_id}")
+                        
+                        edit_ret_val = int(set_to_edit['retired']) if 'retired' in set_to_edit else 0
+                        edit_ret = st.selectbox("Status", ["Actief (In de handel)", "Retired (Uit de handel)"], index=edit_ret_val, key=f"edit_ret_list_{selected_set_id}")
+                        edit_ret_int = 1 if edit_ret == "Retired (Uit de handel)" else 0
                     
                     col_btn1, col_btn2 = st.columns([1, 5])
                     with col_btn1:
                         if st.button("Bijwerken", key=f"update_btn_list_{selected_set_id}"):
-                            update_set(selected_set_id, edit_num, edit_name, edit_date.strftime('%Y-%m-%d'), edit_price, edit_qty, edit_retail, edit_current)
+                            update_set(selected_set_id, edit_num, edit_name, edit_date.strftime('%Y-%m-%d'), edit_price, edit_qty, edit_retail, edit_current, edit_theme, edit_cond, edit_ret_int)
                             st.success("Set succesvol bijgewerkt!")
                             st.rerun()
                     with col_btn2:
@@ -378,6 +476,9 @@ elif menu == "➕ Set Toevoegen":
             name = st.text_input("Setnaam (optioneel)", help="Laat leeg om deze automatisch te laten opzoeken op Brickset.")
             quantity = st.number_input("Aantal stuks", min_value=1, value=1, step=1)
             
+            # Conditie selectbox
+            condition = st.selectbox("Conditie", ["Nieuw (MISB)", "Nieuw (BNIB)", "Gebruikt met doos", "Gebruikt zonder doos"])
+            
         with col2:
             purchase_price = st.number_input("Aankoopprijs per stuk (€)", min_value=0.0, step=0.01, format="%.2f")
             purchase_date = st.date_input("Aankoopdatum", value=datetime.today().date())
@@ -396,7 +497,8 @@ elif menu == "➕ Set Toevoegen":
                         name=name if name.strip() else None,
                         purchase_date=purchase_date.strftime('%Y-%m-%d'),
                         purchase_price=purchase_price,
-                        quantity=quantity
+                        quantity=quantity,
+                        condition=condition
                     )
                     if success:
                         st.success(f"Set {set_num} ({quantity}x) succesvol toegevoegd aan je voorraad!")

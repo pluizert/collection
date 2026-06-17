@@ -1,0 +1,7 @@
+﻿指定
+.venv/
+node_modules/
+.git/
+__pycache__/
+.streamlit/
+*.pyc
