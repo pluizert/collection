@@ -62,7 +62,19 @@ def init_db():
     cursor.execute("SELECT COUNT(*) as count FROM users")
     count = cursor.fetchone()["count"]
     if count == 0:
-        cursor.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'Lego2026', 'admin')")
+        # Haal het initiële wachtwoord op uit omgevingsvariabelen of Streamlit Secrets om hardcoding te vermijden
+        initial_password = "Lego2026"
+        try:
+            import streamlit as st
+            if "ADMIN_PASSWORD" in st.secrets:
+                initial_password = st.secrets["ADMIN_PASSWORD"]
+        except Exception:
+            pass
+        
+        import os
+        initial_password = os.environ.get("ADMIN_PASSWORD", initial_password)
+        
+        cursor.execute("INSERT INTO users (username, password, role) VALUES ('admin', ?, 'admin')", (initial_password,))
         
     conn.commit()
     conn.close()

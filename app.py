@@ -553,38 +553,50 @@ elif menu == "👥 Gebruikersbeheer":
                             
         with col_edit:
             st.subheader("⚙️ Gebruiker Bewerken of Verwijderen")
-            # Selecteer een gebruiker om te bewerken (negeer de ingelogde gebruiker zelf om te voorkomen dat ze zichzelf verwijderen/aanpassen)
             current_logged_in = st.session_state.logged_in_user["username"] if st.session_state.logged_in_user else ""
-            edit_options = [u for u in users_list if u["username"] != current_logged_in]
             
-            if not edit_options:
-                st.info("Er zijn geen andere gebruikers om aan te passen.")
-            else:
-                selected_user = st.selectbox(
-                    "Selecteer gebruiker",
-                    options=edit_options,
-                    format_func=lambda x: f"{x['username']} ({x['role']})"
-                )
-                
-                if selected_user:
-                    with st.form("edit_user_form"):
-                        edit_username = st.text_input("Gebruikersnaam aanpassen", value=selected_user["username"])
-                        edit_password = st.text_input("Wachtwoord aanpassen", value=selected_user["password"], type="password")
+            selected_user = st.selectbox(
+                "Selecteer gebruiker",
+                options=users_list,
+                format_func=lambda x: f"{x['username']} ({x['role']})" + (" (Jij)" if x['username'] == current_logged_in else "")
+            )
+            
+            if selected_user:
+                with st.form("edit_user_form"):
+                    edit_username = st.text_input("Gebruikersnaam aanpassen", value=selected_user["username"])
+                    edit_password = st.text_input("Wachtwoord aanpassen", value=selected_user["password"], type="password")
+                    
+                    # Voorkom dat de ingelogde beheerder zijn eigen rol per ongeluk wijzigt (bijv. naar viewer)
+                    if selected_user["username"] == current_logged_in:
+                        st.write(f"Rol: **{selected_user['role']}** *(Je kunt je eigen rol niet wijzigen)*")
+                        edit_role = selected_user["role"]
+                    else:
                         edit_role = st.selectbox("Rol aanpassen", ["admin", "viewer"], index=0 if selected_user["role"] == "admin" else 1)
-                        
-                        col_btn_u, col_btn_d = st.columns(2)
-                        with col_btn_u:
-                            if st.form_submit_button("Wijzigingen Opslaan"):
-                                if not edit_username.strip() or not edit_password.strip():
-                                    st.error("Velden mogen niet leeg zijn!")
+                    
+                    col_btn_u, col_btn_d = st.columns(2)
+                    with col_btn_u:
+                        if st.form_submit_button("Wijzigingen Opslaan"):
+                            if not edit_username.strip() or not edit_password.strip():
+                                st.error("Velden mogen niet leeg zijn!")
+                            else:
+                                success = update_user(selected_user["id"], edit_username.strip(), edit_password.strip(), edit_role)
+                                if success:
+                                    # Als we onszelf hebben aangepast, update dan ook de actieve sessie
+                                    if selected_user["username"] == current_logged_in:
+                                        st.session_state.logged_in_user = {
+                                            "id": selected_user["id"],
+                                            "username": edit_username.strip(),
+                                            "password": edit_password.strip(),
+                                            "role": edit_role
+                                        }
+                                    st.success("Gebruiker succesvol bijgewerkt!")
+                                    st.rerun()
                                 else:
-                                    success = update_user(selected_user["id"], edit_username.strip(), edit_password.strip(), edit_role)
-                                    if success:
-                                        st.success("Gebruiker succesvol bijgewerkt!")
-                                        st.rerun()
-                                    else:
-                                        st.error("Fout bij bijwerken (mogelijk bestaat de gebruikersnaam al)!")
-                        with col_btn_d:
+                                    st.error("Fout bij bijwerken (mogelijk bestaat de gebruikersnaam al)!")
+                    with col_btn_d:
+                        if selected_user["username"] == current_logged_in:
+                            st.write("*(Je kunt jezelf niet verwijderen)*")
+                        else:
                             if st.form_submit_button("Gebruiker Verwijderen", type="primary"):
                                 delete_user(selected_user["id"])
                                 st.warning("Gebruiker verwijderd!")
