@@ -59,7 +59,6 @@ st.markdown("""
         .stButton>button {
             border-radius: 20px;
         }
-    </style>
 """, unsafe_allow_html=True)
 
 # Controleer of er een ingelogde gebruiker is in session state
@@ -78,9 +77,12 @@ menu_options = ["📊 Dashboard", "🧱 Mijn Voorraad"]
 if is_admin:
     menu_options += ["➕ Set Toevoegen", "📥 Excel Importeren", "👥 Gebruikersbeheer"]
 
+# We gebruiken een vaste key om te voorkomen dat de Streamlit radio button selectie
+# en weergave uit sync raken wanneer de lijst met opties dynamisch groeit bij het inloggen.
 menu = st.sidebar.radio(
     "Navigatie",
-    menu_options
+    menu_options,
+    key="navigation_menu"
 )
 
 # Beheerdersmodus / Wachtwoordbeveiliging in de zijbalk via database
@@ -100,7 +102,7 @@ if st.session_state.logged_in_user is None:
             st.sidebar.error("Onjuiste gegevens!")
 else:
     current_user = st.session_state.logged_in_user
-    st.sidebar.write(f"Ingehelogd als: **{current_user['username']}** ({current_user['role']})")
+    st.sidebar.write(f"Ingelogd als: **{current_user['username']}** ({current_user['role']})")
     if st.sidebar.button("Uitloggen"):
         st.session_state.logged_in_user = None
         st.rerun()
@@ -129,9 +131,12 @@ def get_lego_image_display(image_path):
     if image_path:
         # Vervang backslashes door forward slashes voor Linux/Online compatibiliteit
         normalized_path = image_path.replace('\\', '/')
-        if os.path.exists(normalized_path):
+        # Bepaal het absolute pad ten opzichte van de app.py directory om CWD-fouten online te vermijden
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        resolved_path = os.path.join(base_dir, normalized_path)
+        if os.path.exists(resolved_path):
             try:
-                return Image.open(normalized_path)
+                return Image.open(resolved_path)
             except Exception:
                 pass
     # Standaard placeholder

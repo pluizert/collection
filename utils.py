@@ -58,23 +58,35 @@ def init_db():
         )
     """)
     
-    # Controleer of er ten minste één gebruiker is, zo niet, voeg admin toe
-    cursor.execute("SELECT COUNT(*) as count FROM users")
-    count = cursor.fetchone()["count"]
-    if count == 0:
-        # Haal het initiële wachtwoord op uit omgevingsvariabelen of Streamlit Secrets om hardcoding te vermijden
-        initial_password = "Lego2026"
-        try:
-            import streamlit as st
-            if "ADMIN_PASSWORD" in st.secrets:
-                initial_password = st.secrets["ADMIN_PASSWORD"]
-        except Exception:
-            pass
+    # Haal het geconfigureerde admin-wachtwoord op uit Streamlit Secrets of omgevingsvariabelen
+    configured_password = None
+    try:
+        import streamlit as st
+        if "ADMIN_PASSWORD" in st.secrets:
+            configured_password = st.secrets["ADMIN_PASSWORD"]
+    except Exception:
+        pass
         
-        import os
-        initial_password = os.environ.get("ADMIN_PASSWORD", initial_password)
-        
-        cursor.execute("INSERT INTO users (username, password, role) VALUES ('admin', ?, 'admin')", (initial_password,))
+    import os
+    configured_password = os.environ.get("ADMIN_PASSWORD", configured_password)
+    
+    # Controleer of de 'admin' gebruiker al bestaat
+    cursor.execute("SELECT COUNT(*) as count FROM users WHERE username = 'admin'")
+    admin_exists = cursor.fetchone()["count"] > 0
+    
+    if configured_password:
+        if admin_exists:
+            # Update het wachtwoord van de bestaande admin met de nieuw geconfigureerde waarde van secrets/env
+            cursor.execute("UPDATE users SET password = ? WHERE username = 'admin'", (configured_password,))
+        else:
+            # Voeg admin toe met het geconfigureerde wachtwoord
+            cursor.execute("INSERT INTO users (username, password, role) VALUES ('admin', ?, 'admin')", (configured_password,))
+    else:
+        # Als er geen ADMIN_PASSWORD is geconfigureerd en er zijn helemaal geen gebruikers, maak de default admin aan
+        cursor.execute("SELECT COUNT(*) as count FROM users")
+        count = cursor.fetchone()["count"]
+        if count == 0:
+            cursor.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'Lego2026', 'admin')")
         
     conn.commit()
     conn.close()
