@@ -138,7 +138,7 @@ def fetch_lego_details_and_image(set_num):
     base_num = clean_num.split("-")[0]
 
     set_name = f"Lego Set {base_num}"
-    local_image_path = os.path.join(IMAGE_DIR, f"{base_num}.jpg")
+    local_image_path = os.path.join(IMAGE_DIR, f"{base_num}.jpg").replace('\\', '/')
     retail_price = 0.0
     current_price = 0.0
 

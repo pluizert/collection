@@ -57,6 +57,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Bepaal het vereiste wachtwoord (Streamlit Secrets of standaard 'Lego2026')
+try:
+    REQUIRED_PASSWORD = st.secrets["ADMIN_PASSWORD"]
+except Exception:
+    REQUIRED_PASSWORD = "Lego2026"
+
 # Sidebar menu
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/2/24/LEGO_logo.svg", width=100)
 st.sidebar.title("🧱 Lego Collector")
@@ -65,30 +71,50 @@ menu = st.sidebar.radio(
     ["📊 Dashboard", "🧱 Mijn Voorraad", "➕ Set Toevoegen", "📥 Excel Importeren"]
 )
 
+# Beheerdersmodus / Wachtwoordbeveiliging in de zijbalk
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔒 Beheerdersmodus")
+admin_password = st.sidebar.text_input("Voer beheerderswachtwoord in", type="password", help="Vereist voor toevoegen, bewerken of wissen van sets.")
+is_admin = (admin_password == REQUIRED_PASSWORD)
+
+if is_admin:
+    st.sidebar.success("🔑 Beheerdersmodus Actief")
+elif admin_password:
+    st.sidebar.error("❌ Onjuist wachtwoord")
+
 # Ververs knop in sidebar
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Ververs Marktprijzen", help="Haalt de allernieuwste huidige prijzen en namen op van Brickset"):
-    with st.spinner("Prijzen ophalen van alle sets in je database..."):
-        refresh_all_prices()
-        st.sidebar.success("Marktprijzen succesvol bijgewerkt!")
-        st.rerun()
+    if not is_admin:
+        st.sidebar.error("Wachtwoord vereist!")
+    else:
+        with st.spinner("Prijzen ophalen van alle sets in je database..."):
+            refresh_all_prices()
+            st.sidebar.success("Marktprijzen succesvol bijgewerkt!")
+            st.rerun()
 
 # Danger zone in sidebar
 st.sidebar.markdown("---")
 st.sidebar.markdown("<p style='color:red; font-weight:bold;'>⚠️ Danger Zone</p>", unsafe_allow_html=True)
 if st.sidebar.button("🗑️ Wis Volledige Database", help="Verwijdert alle Lego sets en afbeeldingen uit de database"):
-    from utils import clear_database
-    clear_database()
-    st.sidebar.error("Database volledig gewist!")
-    st.rerun()
+    if not is_admin:
+        st.sidebar.error("Beheerderswachtwoord vereist!")
+    else:
+        from utils import clear_database
+        clear_database()
+        st.sidebar.error("Database volledig gewist!")
+        st.rerun()
 
 # Functie om veilige weergave van afbeeldingen te garanderen
 def get_lego_image_display(image_path):
-    if image_path and os.path.exists(image_path):
-        try:
-            return Image.open(image_path)
-        except Exception:
-            pass
+    if image_path:
+        # Vervang backslashes door forward slashes voor Linux/Online compatibiliteit
+        normalized_path = image_path.replace('\\', '/')
+        if os.path.exists(normalized_path):
+            try:
+                return Image.open(normalized_path)
+            except Exception:
+                pass
     # Standaard placeholder
     return "https://images.brickset.com/sets/images/75192-1.jpg" # Leuke Millennium Falcon als fallback
 
@@ -244,14 +270,20 @@ elif menu == "🧱 Mijn Voorraad":
                             col_upd, col_del = st.columns(2)
                             with col_upd:
                                 if st.button("Opslaan", key=f"save_{item['id']}"):
-                                    update_set(item['id'], item['set_number'], new_name, new_date.strftime('%Y-%m-%d'), new_price, new_qty, new_retail_price, new_current_price)
-                                    st.success("Opgeslagen!")
-                                    st.rerun()
+                                    if not is_admin:
+                                        st.error("Beheerderswachtwoord vereist!")
+                                    else:
+                                        update_set(item['id'], item['set_number'], new_name, new_date.strftime('%Y-%m-%d'), new_price, new_qty, new_retail_price, new_current_price)
+                                        st.success("Opgeslagen!")
+                                        st.rerun()
                             with col_del:
                                 if st.button("Verwijderen", key=f"del_{item['id']}"):
-                                    delete_set(item['id'])
-                                    st.warning("Set verwijderd!")
-                                    st.rerun()
+                                    if not is_admin:
+                                        st.error("Beheerderswachtwoord vereist!")
+                                    else:
+                                        delete_set(item['id'])
+                                        st.warning("Set verwijderd!")
+                                        st.rerun()
                                     
         else:
             # Gedetailleerde lijstweergave
@@ -300,18 +332,27 @@ elif menu == "🧱 Mijn Voorraad":
                 col_btn1, col_btn2 = st.columns([1, 5])
                 with col_btn1:
                     if st.button("Bijwerken", key="update_btn_list"):
-                        update_set(selected_set_id, edit_num, edit_name, edit_date.strftime('%Y-%m-%d'), edit_price, edit_qty, edit_retail, edit_current)
-                        st.success("Set succesvol bijgewerkt!")
-                        st.rerun()
+                        if not is_admin:
+                            st.error("Beheerderswachtwoord vereist!")
+                        else:
+                            update_set(selected_set_id, edit_num, edit_name, edit_date.strftime('%Y-%m-%d'), edit_price, edit_qty, edit_retail, edit_current)
+                            st.success("Set succesvol bijgewerkt!")
+                            st.rerun()
                 with col_btn2:
                     if st.button("Verwijder deze set", key="delete_btn_list", type="primary"):
-                        delete_set(selected_set_id)
-                        st.warning("Set succesvol verwijderd!")
-                        st.rerun()
+                        if not is_admin:
+                            st.error("Beheerderswachtwoord vereist!")
+                        else:
+                            delete_set(selected_set_id)
+                            st.warning("Set succesvol verwijderd!")
+                            st.rerun()
 
 # --- SET TOEVOEGEN PAGE ---
 elif menu == "➕ Set Toevoegen":
     st.markdown("<h1 class='main-header'>➕ Handmatig Lego Set Toevoegen</h1>", unsafe_allow_html=True)
+    
+    if not is_admin:
+        st.warning("⚠️ Beheerdersmodus is niet actief. Voer het juiste wachtwoord in de zijbalk in om sets toe te voegen.")
     
     st.write("Vul de details van je Lego set in. De app probeert automatisch de officiële naam, foto en huidige marktprijzen op te halen!")
     
@@ -330,7 +371,9 @@ elif menu == "➕ Set Toevoegen":
         submitted = st.form_submit_button("Lego Set Toevoegen")
         
         if submitted:
-            if not set_num:
+            if not is_admin:
+                st.error("Je moet ingelogd zijn als beheerder om sets toe te voegen!")
+            elif not set_num:
                 st.error("Setnummer is verplicht!")
             else:
                 with st.spinner("Gegevens, afbeelding en prijzen ophalen..."):
@@ -351,6 +394,9 @@ elif menu == "➕ Set Toevoegen":
 elif menu == "📥 Excel Importeren":
     st.markdown("<h1 class='main-header'>📥 Excel / CSV Importeren</h1>", unsafe_allow_html=True)
     
+    if not is_admin:
+        st.warning("⚠️ Beheerdersmodus is niet actief. Voer het juiste wachtwoord in de zijbalk in om Excel-bestanden te importeren.")
+        
     st.write("""
     Heb je je Lego verzameling momenteel in Excel of CSV staan? Upload het bestand hieronder.
     Je kunt zelf aangeven op welke **Sheet** je voorraad staat, en welke kolommen horen bij het **setnummer**, de **aankoopprijs**, de **aankoopdatum**, het **aantal**, en optioneel de **naam**.
@@ -409,37 +455,40 @@ elif menu == "📥 Excel Importeren":
                 col_mapping['purchase_date'] = st.selectbox("Aankoopdatum kolom *", options=columns, index=columns.index(def_date) if def_date in columns else 0)
                 
             if st.button("Start Import", type="primary"):
-                # Reset file pointer naar het begin
-                uploaded_file.seek(0)
-                
-                # Filter 'Geen' uit mapping
-                mapping = {
-                    'set_number': col_mapping['set_number'],
-                    'purchase_price': col_mapping['purchase_price'],
-                    'purchase_date': col_mapping['purchase_date']
-                }
-                if col_mapping['name'] != "Geen":
-                    mapping['name'] = col_mapping['name']
-                if col_mapping['quantity'] != "Geen":
-                    mapping['quantity'] = col_mapping['quantity']
+                if not is_admin:
+                    st.error("Je moet ingelogd zijn als beheerder om sets te importeren!")
+                else:
+                    # Reset file pointer naar het begin
+                    uploaded_file.seek(0)
                     
-                with st.spinner("Importeren en foto's/marktprijzen downloaden... Dit kan even duren afhankelijk van het aantal sets."):
-                    success_count, errors = import_excel_or_csv(uploaded_file, mapping, sheet_name=sheet_name)
-                    
-                    if success_count > 0:
-                        st.success(f"Gereed! Er zijn {success_count} sets succesvol geïmporteerd.")
-                        if errors:
-                            st.warning(f"Er waren problemen bij {len(errors)} rijen:")
-                            for err in errors[:10]:
-                                st.write(f"- {err}")
-                            if len(errors) > 10:
-                                st.write("...en meer.")
-                        st.balloons()
-                        st.info("Ga naar 'Mijn Voorraad' of 'Dashboard' om je geïmporteerde sets te bewonderen!")
-                    else:
-                        st.error("Er zijn geen sets geïmporteerd. Controleer de kolomkoppelingen.")
-                        if errors:
-                            for err in errors[:5]:
-                                st.write(err)
+                    # Filter 'Geen' uit mapping
+                    mapping = {
+                        'set_number': col_mapping['set_number'],
+                        'purchase_price': col_mapping['purchase_price'],
+                        'purchase_date': col_mapping['purchase_date']
+                    }
+                    if col_mapping['name'] != "Geen":
+                        mapping['name'] = col_mapping['name']
+                    if col_mapping['quantity'] != "Geen":
+                        mapping['quantity'] = col_mapping['quantity']
+                        
+                    with st.spinner("Importeren en foto's/marktprijzen downloaden... Dit kan even duren afhankelijk van het aantal sets."):
+                        success_count, errors = import_excel_or_csv(uploaded_file, mapping, sheet_name=sheet_name)
+                        
+                        if success_count > 0:
+                            st.success(f"Gereed! Er zijn {success_count} sets succesvol geïmporteerd.")
+                            if errors:
+                                st.warning(f"Er waren problemen bij {len(errors)} rijen:")
+                                for err in errors[:10]:
+                                    st.write(f"- {err}")
+                                if len(errors) > 10:
+                                    st.write("...en meer.")
+                            st.balloons()
+                            st.info("Ga naar 'Mijn Voorraad' of 'Dashboard' om je geïmporteerde sets te bewonderen!")
+                        else:
+                            st.error("Er zijn geen sets geïmporteerd. Controleer de kolomkoppelingen.")
+                            if errors:
+                                for err in errors[:5]:
+                                    st.write(err)
         except Exception as e:
             st.error(f"Fout bij het laden van het bestand: {e}")
