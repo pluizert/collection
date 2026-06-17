@@ -340,23 +340,23 @@ elif menu == "🧱 Mijn Voorraad":
                     
                     edit_col1, edit_col2 = st.columns(2)
                     with edit_col1:
-                        edit_name = st.text_input("Setnaam", value=set_to_edit['name'], key="edit_name_list")
-                        edit_num = st.text_input("Setnummer", value=set_to_edit['set_number'], key="edit_num_list")
-                        edit_qty = st.number_input("Aantal stuks", value=int(set_to_edit['quantity']), min_value=1, step=1, key="edit_qty_list")
+                        edit_name = st.text_input("Setnaam", value=set_to_edit['name'], key=f"edit_name_list_{selected_set_id}")
+                        edit_num = st.text_input("Setnummer", value=set_to_edit['set_number'], key=f"edit_num_list_{selected_set_id}")
+                        edit_qty = st.number_input("Aantal stuks", value=int(set_to_edit['quantity']), min_value=1, step=1, key=f"edit_qty_list_{selected_set_id}")
                     with edit_col2:
-                        edit_price = st.number_input("Aankoopprijs p/s (€)", value=float(set_to_edit['purchase_price']), key="edit_price_list")
-                        edit_current = st.number_input("Huidige marktprijs p/s (€)", value=float(set_to_edit['current_price']), key="edit_current_list")
-                        edit_retail = st.number_input("Adviesprijs (RRP) (€)", value=float(set_to_edit['retail_price']), key="edit_retail_list")
-                        edit_date = st.date_input("Aankoopdatum", value=datetime.strptime(set_to_edit['purchase_date'], '%Y-%m-%d').date(), key="edit_date_list")
+                        edit_price = st.number_input("Aankoopprijs p/s (€)", value=float(set_to_edit['purchase_price']), key=f"edit_price_list_{selected_set_id}")
+                        edit_current = st.number_input("Huidige marktprijs p/s (€)", value=float(set_to_edit['current_price']), key=f"edit_current_list_{selected_set_id}")
+                        edit_retail = st.number_input("Adviesprijs (RRP) (€)", value=float(set_to_edit['retail_price']), key=f"edit_retail_list_{selected_set_id}")
+                        edit_date = st.date_input("Aankoopdatum", value=datetime.strptime(set_to_edit['purchase_date'], '%Y-%m-%d').date(), key=f"edit_date_list_{selected_set_id}")
                     
                     col_btn1, col_btn2 = st.columns([1, 5])
                     with col_btn1:
-                        if st.button("Bijwerken", key="update_btn_list"):
+                        if st.button("Bijwerken", key=f"update_btn_list_{selected_set_id}"):
                             update_set(selected_set_id, edit_num, edit_name, edit_date.strftime('%Y-%m-%d'), edit_price, edit_qty, edit_retail, edit_current)
                             st.success("Set succesvol bijgewerkt!")
                             st.rerun()
                     with col_btn2:
-                        if st.button("Verwijder deze set", key="delete_btn_list", type="primary"):
+                        if st.button("Verwijder deze set", key=f"delete_btn_list_{selected_set_id}", type="primary"):
                             delete_set(selected_set_id)
                             st.warning("Set succesvol verwijderd!")
                             st.rerun()
