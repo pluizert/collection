@@ -14,7 +14,12 @@ from utils import (
     import_excel_or_csv,
     clean_set_number,
     fetch_lego_details_and_image,
-    refresh_all_prices
+    refresh_all_prices,
+    create_user,
+    update_user,
+    delete_user,
+    get_all_users,
+    verify_user
 )
 
 # Initialiseer database
@@ -57,49 +62,63 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Bepaal het vereiste wachtwoord (Streamlit Secrets of standaard 'Lego2026')
-try:
-    REQUIRED_PASSWORD = st.secrets["ADMIN_PASSWORD"]
-except Exception:
-    REQUIRED_PASSWORD = "Lego2026"
+# Controleer of er een ingelogde gebruiker is in session state
+if "logged_in_user" not in st.session_state:
+    st.session_state.logged_in_user = None
+
+is_admin = False
+if st.session_state.logged_in_user is not None:
+    is_admin = (st.session_state.logged_in_user['role'] == 'admin')
 
 # Sidebar menu
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/2/24/LEGO_logo.svg", width=100)
 st.sidebar.title("🧱 Lego Collector")
+
+menu_options = ["📊 Dashboard", "🧱 Mijn Voorraad"]
+if is_admin:
+    menu_options += ["➕ Set Toevoegen", "📥 Excel Importeren", "👥 Gebruikersbeheer"]
+
 menu = st.sidebar.radio(
     "Navigatie",
-    ["📊 Dashboard", "🧱 Mijn Voorraad", "➕ Set Toevoegen", "📥 Excel Importeren"]
+    menu_options
 )
 
-# Beheerdersmodus / Wachtwoordbeveiliging in de zijbalk
+# Beheerdersmodus / Wachtwoordbeveiliging in de zijbalk via database
 st.sidebar.markdown("---")
-st.sidebar.subheader("🔒 Beheerdersmodus")
-admin_password = st.sidebar.text_input("Voer beheerderswachtwoord in", type="password", help="Vereist voor toevoegen, bewerken of wissen van sets.")
-is_admin = (admin_password == REQUIRED_PASSWORD)
+st.sidebar.subheader("🔒 Inloggen")
 
+if st.session_state.logged_in_user is None:
+    login_username = st.sidebar.text_input("Gebruikersnaam", key="login_username_input")
+    login_password = st.sidebar.text_input("Wachtwoord", type="password", key="login_password_input")
+    if st.sidebar.button("Inloggen"):
+        user = verify_user(login_username, login_password)
+        if user:
+            st.session_state.logged_in_user = user
+            st.sidebar.success(f"Welkom {user['username']}!")
+            st.rerun()
+        else:
+            st.sidebar.error("Onjuiste gegevens!")
+else:
+    current_user = st.session_state.logged_in_user
+    st.sidebar.write(f"Ingehelogd als: **{current_user['username']}** ({current_user['role']})")
+    if st.sidebar.button("Uitloggen"):
+        st.session_state.logged_in_user = None
+        st.rerun()
+
+# Beheerder opties in zijbalk (Alleen tonen als admin)
 if is_admin:
-    st.sidebar.success("🔑 Beheerdersmodus Actief")
-elif admin_password:
-    st.sidebar.error("❌ Onjuist wachtwoord")
-
-# Ververs knop in sidebar
-st.sidebar.markdown("---")
-if st.sidebar.button("🔄 Ververs Marktprijzen", help="Haalt de allernieuwste huidige prijzen en namen op van Brickset"):
-    if not is_admin:
-        st.sidebar.error("Wachtwoord vereist!")
-    else:
+    # Ververs knop in sidebar
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 Ververs Marktprijzen", help="Haalt de allernieuwste huidige prijzen en namen op van Brickset"):
         with st.spinner("Prijzen ophalen van alle sets in je database..."):
             refresh_all_prices()
             st.sidebar.success("Marktprijzen succesvol bijgewerkt!")
             st.rerun()
 
-# Danger zone in sidebar
-st.sidebar.markdown("---")
-st.sidebar.markdown("<p style='color:red; font-weight:bold;'>⚠️ Danger Zone</p>", unsafe_allow_html=True)
-if st.sidebar.button("🗑️ Wis Volledige Database", help="Verwijdert alle Lego sets en afbeeldingen uit de database"):
-    if not is_admin:
-        st.sidebar.error("Beheerderswachtwoord vereist!")
-    else:
+    # Danger zone in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("<p style='color:red; font-weight:bold;'>⚠️ Danger Zone</p>", unsafe_allow_html=True)
+    if st.sidebar.button("🗑️ Wis Volledige Database", help="Verwijdert alle Lego sets en afbeeldingen uit de database"):
         from utils import clear_database
         clear_database()
         st.sidebar.error("Database volledig gewist!")
@@ -258,29 +277,24 @@ elif menu == "🧱 Mijn Voorraad":
                         img = get_lego_image_display(item['image_path'])
                         st.image(img, use_container_width=True)
                         
-                        # Bewerk & Verwijder knoppen onder elke set card
-                        with st.expander("Opties ⚙️"):
-                            new_price = st.number_input("Aankoopprijs aanpassen", value=float(item['purchase_price']), key=f"p_{item['id']}")
-                            new_current_price = st.number_input("Huidige marktprijs aanpassen", value=float(item['current_price']), key=f"cp_{item['id']}")
-                            new_retail_price = st.number_input("Adviesprijs (RRP) aanpassen", value=float(item['retail_price']), key=f"rp_{item['id']}")
-                            new_qty = st.number_input("Aantal aanpassen", value=int(item['quantity']), min_value=1, step=1, key=f"q_{item['id']}")
-                            new_name = st.text_input("Naam aanpassen", value=item['name'], key=f"n_{item['id']}")
-                            new_date = st.date_input("Datum aanpassen", value=datetime.strptime(item['purchase_date'], '%Y-%m-%d').date(), key=f"d_{item['id']}")
-                            
-                            col_upd, col_del = st.columns(2)
-                            with col_upd:
-                                if st.button("Opslaan", key=f"save_{item['id']}"):
-                                    if not is_admin:
-                                        st.error("Beheerderswachtwoord vereist!")
-                                    else:
+                        # Bewerk & Verwijder knoppen onder elke set card (alleen zichtbaar voor admins)
+                        if is_admin:
+                            with st.expander("Opties ⚙️"):
+                                new_price = st.number_input("Aankoopprijs aanpassen", value=float(item['purchase_price']), key=f"p_{item['id']}")
+                                new_current_price = st.number_input("Huidige marktprijs aanpassen", value=float(item['current_price']), key=f"cp_{item['id']}")
+                                new_retail_price = st.number_input("Adviesprijs (RRP) aanpassen", value=float(item['retail_price']), key=f"rp_{item['id']}")
+                                new_qty = st.number_input("Aantal aanpassen", value=int(item['quantity']), min_value=1, step=1, key=f"q_{item['id']}")
+                                new_name = st.text_input("Naam aanpassen", value=item['name'], key=f"n_{item['id']}")
+                                new_date = st.date_input("Datum aanpassen", value=datetime.strptime(item['purchase_date'], '%Y-%m-%d').date(), key=f"d_{item['id']}")
+                                
+                                col_upd, col_del = st.columns(2)
+                                with col_upd:
+                                    if st.button("Opslaan", key=f"save_{item['id']}"):
                                         update_set(item['id'], item['set_number'], new_name, new_date.strftime('%Y-%m-%d'), new_price, new_qty, new_retail_price, new_current_price)
                                         st.success("Opgeslagen!")
                                         st.rerun()
-                            with col_del:
-                                if st.button("Verwijderen", key=f"del_{item['id']}"):
-                                    if not is_admin:
-                                        st.error("Beheerderswachtwoord vereist!")
-                                    else:
+                                with col_del:
+                                    if st.button("Verwijderen", key=f"del_{item['id']}"):
                                         delete_set(item['id'])
                                         st.warning("Set verwijderd!")
                                         st.rerun()
@@ -307,42 +321,37 @@ elif menu == "🧱 Mijn Voorraad":
                 hide_index=True
             )
             
-            # Acties via dropdown in sidebar of onder de lijst
-            st.subheader("Set Wijzigen of Verwijderen")
-            selected_set_id = st.selectbox(
-                "Kies een set om te bewerken/verwijderen", 
-                options=filtered_df['id'].tolist(),
-                format_func=lambda x: f"Set {filtered_df[filtered_df['id'] == x]['set_number'].values[0]} - {filtered_df[filtered_df['id'] == x]['name'].values[0]}"
-            )
-            
-            if selected_set_id:
-                set_to_edit = filtered_df[filtered_df['id'] == selected_set_id].iloc[0]
+            # Acties via dropdown in sidebar of onder de lijst (alleen zichtbaar voor admins)
+            if is_admin:
+                st.subheader("Set Wijzigen of Verwijderen")
+                selected_set_id = st.selectbox(
+                    "Kies een set om te bewerken/verwijderen", 
+                    options=filtered_df['id'].tolist(),
+                    format_func=lambda x: f"Set {filtered_df[filtered_df['id'] == x]['set_number'].values[0]} - {filtered_df[filtered_df['id'] == x]['name'].values[0]}"
+                )
                 
-                edit_col1, edit_col2 = st.columns(2)
-                with edit_col1:
-                    edit_name = st.text_input("Setnaam", value=set_to_edit['name'], key="edit_name_list")
-                    edit_num = st.text_input("Setnummer", value=set_to_edit['set_number'], key="edit_num_list")
-                    edit_qty = st.number_input("Aantal stuks", value=int(set_to_edit['quantity']), min_value=1, step=1, key="edit_qty_list")
-                with edit_col2:
-                    edit_price = st.number_input("Aankoopprijs p/s (€)", value=float(set_to_edit['purchase_price']), key="edit_price_list")
-                    edit_current = st.number_input("Huidige marktprijs p/s (€)", value=float(set_to_edit['current_price']), key="edit_current_list")
-                    edit_retail = st.number_input("Adviesprijs (RRP) (€)", value=float(set_to_edit['retail_price']), key="edit_retail_list")
-                    edit_date = st.date_input("Aankoopdatum", value=datetime.strptime(set_to_edit['purchase_date'], '%Y-%m-%d').date(), key="edit_date_list")
-                
-                col_btn1, col_btn2 = st.columns([1, 5])
-                with col_btn1:
-                    if st.button("Bijwerken", key="update_btn_list"):
-                        if not is_admin:
-                            st.error("Beheerderswachtwoord vereist!")
-                        else:
+                if selected_set_id:
+                    set_to_edit = filtered_df[filtered_df['id'] == selected_set_id].iloc[0]
+                    
+                    edit_col1, edit_col2 = st.columns(2)
+                    with edit_col1:
+                        edit_name = st.text_input("Setnaam", value=set_to_edit['name'], key="edit_name_list")
+                        edit_num = st.text_input("Setnummer", value=set_to_edit['set_number'], key="edit_num_list")
+                        edit_qty = st.number_input("Aantal stuks", value=int(set_to_edit['quantity']), min_value=1, step=1, key="edit_qty_list")
+                    with edit_col2:
+                        edit_price = st.number_input("Aankoopprijs p/s (€)", value=float(set_to_edit['purchase_price']), key="edit_price_list")
+                        edit_current = st.number_input("Huidige marktprijs p/s (€)", value=float(set_to_edit['current_price']), key="edit_current_list")
+                        edit_retail = st.number_input("Adviesprijs (RRP) (€)", value=float(set_to_edit['retail_price']), key="edit_retail_list")
+                        edit_date = st.date_input("Aankoopdatum", value=datetime.strptime(set_to_edit['purchase_date'], '%Y-%m-%d').date(), key="edit_date_list")
+                    
+                    col_btn1, col_btn2 = st.columns([1, 5])
+                    with col_btn1:
+                        if st.button("Bijwerken", key="update_btn_list"):
                             update_set(selected_set_id, edit_num, edit_name, edit_date.strftime('%Y-%m-%d'), edit_price, edit_qty, edit_retail, edit_current)
                             st.success("Set succesvol bijgewerkt!")
                             st.rerun()
-                with col_btn2:
-                    if st.button("Verwijder deze set", key="delete_btn_list", type="primary"):
-                        if not is_admin:
-                            st.error("Beheerderswachtwoord vereist!")
-                        else:
+                    with col_btn2:
+                        if st.button("Verwijder deze set", key="delete_btn_list", type="primary"):
                             delete_set(selected_set_id)
                             st.warning("Set succesvol verwijderd!")
                             st.rerun()
@@ -492,3 +501,91 @@ elif menu == "📥 Excel Importeren":
                                     st.write(err)
         except Exception as e:
             st.error(f"Fout bij het laden van het bestand: {e}")
+
+# --- GEBRUIKERSBEHEER PAGE ---
+elif menu == "👥 Gebruikersbeheer":
+    st.markdown("<h1 class='main-header'>👥 Gebruikersbeheer</h1>", unsafe_allow_html=True)
+    
+    if not is_admin:
+        st.error("Je hebt geen toegang tot deze pagina.")
+    else:
+        st.write("Hier kun je nieuwe gebruikers aanmaken, wachtwoorden wijzigen of gebruikers verwijderen.")
+        
+        # Haal alle gebruikers op
+        users_list = get_all_users()
+        df_users = pd.DataFrame(users_list)
+        
+        st.subheader("Bestaande Gebruikers")
+        st.dataframe(
+            df_users.rename(
+                columns={
+                    "id": "ID",
+                    "username": "Gebruikersnaam",
+                    "password": "Wachtwoord",
+                    "role": "Rol"
+                }
+            ),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Twee kolommen: Toevoegen en Bewerken/Verwijderen
+        col_add, col_edit = st.columns(2)
+        
+        with col_add:
+            st.subheader("➕ Gebruiker Toevoegen")
+            with st.form("add_user_form", clear_on_submit=True):
+                new_username = st.text_input("Gebruikersnaam")
+                new_password = st.text_input("Wachtwoord", type="password")
+                new_role = st.selectbox("Rol", ["admin", "viewer"])
+                
+                add_user_submit = st.form_submit_button("Gebruiker Aanmaken")
+                if add_user_submit:
+                    if not new_username.strip() or not new_password.strip():
+                        st.error("Gebruikersnaam en wachtwoord zijn verplicht!")
+                    else:
+                        success = create_user(new_username.strip(), new_password.strip(), new_role)
+                        if success:
+                            st.success(f"Gebruiker '{new_username}' succesvol aangemaakt!")
+                            st.rerun()
+                        else:
+                            st.error("Gebruikersnaam bestaat al!")
+                            
+        with col_edit:
+            st.subheader("⚙️ Gebruiker Bewerken of Verwijderen")
+            # Selecteer een gebruiker om te bewerken (negeer de ingelogde gebruiker zelf om te voorkomen dat ze zichzelf verwijderen/aanpassen)
+            current_logged_in = st.session_state.logged_in_user["username"] if st.session_state.logged_in_user else ""
+            edit_options = [u for u in users_list if u["username"] != current_logged_in]
+            
+            if not edit_options:
+                st.info("Er zijn geen andere gebruikers om aan te passen.")
+            else:
+                selected_user = st.selectbox(
+                    "Selecteer gebruiker",
+                    options=edit_options,
+                    format_func=lambda x: f"{x['username']} ({x['role']})"
+                )
+                
+                if selected_user:
+                    with st.form("edit_user_form"):
+                        edit_username = st.text_input("Gebruikersnaam aanpassen", value=selected_user["username"])
+                        edit_password = st.text_input("Wachtwoord aanpassen", value=selected_user["password"], type="password")
+                        edit_role = st.selectbox("Rol aanpassen", ["admin", "viewer"], index=0 if selected_user["role"] == "admin" else 1)
+                        
+                        col_btn_u, col_btn_d = st.columns(2)
+                        with col_btn_u:
+                            if st.form_submit_button("Wijzigingen Opslaan"):
+                                if not edit_username.strip() or not edit_password.strip():
+                                    st.error("Velden mogen niet leeg zijn!")
+                                else:
+                                    success = update_user(selected_user["id"], edit_username.strip(), edit_password.strip(), edit_role)
+                                    if success:
+                                        st.success("Gebruiker succesvol bijgewerkt!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Fout bij bijwerken (mogelijk bestaat de gebruikersnaam al)!")
+                        with col_btn_d:
+                            if st.form_submit_button("Gebruiker Verwijderen", type="primary"):
+                                delete_user(selected_user["id"])
+                                st.warning("Gebruiker verwijderd!")
+                                st.rerun()

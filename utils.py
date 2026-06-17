@@ -47,9 +47,75 @@ def init_db():
             cursor.execute(f"SELECT {col} FROM lego_sets LIMIT 1")
         except sqlite3.OperationalError:
             cursor.execute(f"ALTER TABLE lego_sets ADD COLUMN {col} {col_type}")
+            
+    # Maak gebruikers tabel aan
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'admin'
+        )
+    """)
+    
+    # Controleer of er ten minste één gebruiker is, zo niet, voeg admin toe
+    cursor.execute("SELECT COUNT(*) as count FROM users")
+    count = cursor.fetchone()["count"]
+    if count == 0:
+        cursor.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'Lego2026', 'admin')")
         
     conn.commit()
     conn.close()
+
+def create_user(username, password, role='admin'):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (username, password, role))
+        conn.commit()
+        success = True
+    except sqlite3.IntegrityError:
+        success = False
+    conn.close()
+    return success
+
+def update_user(user_id, username, password, role='admin'):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE users SET username = ?, password = ?, role = ? WHERE id = ?", (username, password, role, user_id))
+        conn.commit()
+        success = True
+    except sqlite3.IntegrityError:
+        success = False
+    conn.close()
+    return success
+
+def delete_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_all_users():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users ORDER BY username ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def verify_user(username, password):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
 
 def clear_database():
     """Wist alle sets en afbeeldingen uit de database"""
