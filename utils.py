@@ -61,6 +61,25 @@ def init_db():
         )
     """)
     
+    # Maak te koop sets tabel aan
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS for_sale_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_number TEXT NOT NULL,
+            name TEXT,
+            purchase_price REAL, -- optioneel (mag NULL zijn)
+            asking_price REAL NOT NULL,
+            image_path TEXT,
+            quantity INTEGER DEFAULT 1,
+            retail_price REAL DEFAULT 0.0,
+            current_price REAL DEFAULT 0.0,
+            theme TEXT DEFAULT 'Onbekend',
+            condition TEXT DEFAULT 'Nieuw (MISB)',
+            retired INTEGER DEFAULT 0,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     # Haal het geconfigureerde admin-wachtwoord op uit Streamlit Secrets of omgevingsvariabelen
     configured_password = None
     try:
@@ -442,6 +461,104 @@ def add_lego_set(set_number, name=None, purchase_date=None, purchase_price=None,
         INSERT INTO lego_sets (set_number, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price, theme, condition, retired)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (base_num, name, purchase_date, purchase_price, image_path, quantity, retail_price, current_price, theme, condition, retired))
+    conn.commit()
+    conn.close()
+    return True
+
+def add_for_sale_set(set_number, name=None, purchase_price=None, asking_price=0.0, image_path=None, quantity=1, condition="Nieuw (MISB)", retail_price=None, current_price=None, theme=None, retired=None):
+    clean_num = clean_set_number(set_number)
+    base_num = clean_num.split("-")[0] if "-" in clean_num else clean_num
+    
+    if not base_num or not base_num.isdigit():
+        return False
+        
+    # Als er geen details/afbeeldingen zijn, haal ze op
+    if not name or not image_path or retail_price is None or current_price is None or theme is None or retired is None:
+        fetched_name, fetched_img, fetched_retail, fetched_current, fetched_theme, fetched_retired = fetch_lego_details_and_image(clean_num)
+        if not name:
+            name = fetched_name
+        if not image_path:
+            image_path = fetched_img
+        if retail_price is None:
+            retail_price = fetched_retail
+        if current_price is None:
+            current_price = fetched_current
+        if theme is None:
+            theme = fetched_theme
+        if retired is None:
+            retired = fetched_retired
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO for_sale_sets (set_number, name, purchase_price, asking_price, image_path, quantity, retail_price, current_price, theme, condition, retired)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (base_num, name, purchase_price, asking_price, image_path, quantity, retail_price, current_price, theme, condition, retired))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_all_for_sale_sets():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM for_sale_sets ORDER BY added_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def delete_for_sale_set(set_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Haal eerst de afbeeldingslocatie op om eventueel te verwijderen
+    cursor.execute("SELECT image_path FROM for_sale_sets WHERE id = ?", (set_id,))
+    row = cursor.fetchone()
+    if row:
+        image_path = row["image_path"]
+        
+        # Verwijder record uit database
+        cursor.execute("DELETE FROM for_sale_sets WHERE id = ?", (set_id,))
+        conn.commit()
+        
+        # Als het een custom afbeelding is, verwijder deze dan fysiek
+        if image_path and "custom_tekoop_" in image_path and os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+            except Exception as e:
+                print(f"Kon afbeelding {image_path} niet verwijderen: {e}")
+                
+    conn.close()
+    return True
+
+def update_for_sale_set(set_id, set_number, name, purchase_price, asking_price, quantity=1, condition="Nieuw (MISB)", theme="Onbekend", retired=0):
+    clean_num = clean_set_number(set_number)
+    base_num = clean_num.split("-")[0] if "-" in clean_num else clean_num
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Controleer of afbeelding of prijzen veranderd moeten worden
+    cursor.execute("SELECT set_number, image_path, retail_price, current_price, theme, condition, retired FROM for_sale_sets WHERE id = ?", (set_id,))
+    row = cursor.fetchone()
+    image_path = row["image_path"] if row else None
+    retail_price = row["retail_price"] if row else 0.0
+    current_price = row["current_price"] if row else 0.0
+    
+    if row and row["set_number"] != base_num:
+        fetched_name, fetched_img, fetched_retail, fetched_current, fetched_theme, fetched_retired = fetch_lego_details_and_image(clean_num)
+        # Overschrijf alleen als het geen custom geüploade foto is
+        if not (image_path and "custom_tekoop_" in image_path):
+            image_path = fetched_img
+        retail_price = fetched_retail
+        current_price = fetched_current
+        theme = fetched_theme
+        retired = fetched_retired
+            
+    cursor.execute("""
+        UPDATE for_sale_sets
+        SET set_number = ?, name = ?, purchase_price = ?, asking_price = ?, image_path = ?, quantity = ?, retail_price = ?, current_price = ?, theme = ?, condition = ?, retired = ?
+        WHERE id = ?
+    """, (base_num, name, purchase_price, asking_price, image_path, quantity, retail_price, current_price, theme, condition, retired, set_id))
     conn.commit()
     conn.close()
     return True

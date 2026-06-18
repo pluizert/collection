@@ -19,7 +19,11 @@ from utils import (
     update_user,
     delete_user,
     get_all_users,
-    verify_user
+    verify_user,
+    add_for_sale_set,
+    get_all_for_sale_sets,
+    delete_for_sale_set,
+    update_for_sale_set
 )
 
 # Initialiseer database
@@ -73,7 +77,7 @@ if st.session_state.logged_in_user is not None:
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/2/24/LEGO_logo.svg", width=100)
 st.sidebar.title("🧱 Lego Collector")
 
-menu_options = ["📊 Dashboard", "🧱 Mijn Voorraad"]
+menu_options = ["📊 Dashboard", "🧱 Mijn Voorraad", "🏷️ Te Koop"]
 if is_admin:
     menu_options += ["➕ Set Toevoegen", "📥 Excel Importeren", "👥 Gebruikersbeheer"]
 
@@ -459,8 +463,222 @@ elif menu == "🧱 Mijn Voorraad":
                             st.warning("Set succesvol verwijderd!")
                             st.rerun()
 
+# --- TE KOOP PAGE ---
+elif menu == "🏷️ Te Koop":
+    st.markdown("<h1 class='main-header'>🏷️ Lego Sets Te Koop</h1>", unsafe_allow_html=True)
+    
+    fs_sets = get_all_for_sale_sets()
+    
+    # 1. FORMULIER VOOR ADMINS OM NIEUWE SET TE KOOP TOE TE VOEGEN
+    if is_admin:
+        with st.expander("➕ Nieuwe Set Te Koop Toevoegen", expanded=False):
+            with st.form("add_for_sale_form", clear_on_submit=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    fs_num = st.text_input("Setnummer (bijv. 75192 of 10294) *", key="fs_num_add")
+                    fs_name = st.text_input("Setnaam (optioneel, laat leeg voor automatisch scrapen)", key="fs_name_add")
+                    fs_qty = st.number_input("Aantal stuks", min_value=1, value=1, step=1, key="fs_qty_add")
+                    fs_cond = st.selectbox("Conditie", ["Nieuw (MISB)", "Nieuw (BNIB)", "Gebruikt met doos", "Gebruikt zonder doos"], key="fs_cond_add")
+                with col2:
+                    fs_asking = st.number_input("Vraagprijs per stuk (€) *", min_value=0.0, step=0.01, format="%.2f", key="fs_asking_add")
+                    
+                    reg_purchase = st.checkbox("Aankoopprijs registreren?", value=False, help="Vink aan om de aankoopprijs op te slaan (alleen zichtbaar voor admins)")
+                    if reg_purchase:
+                        fs_purchase = st.number_input("Aankoopprijs per stuk (€)", min_value=0.0, step=0.01, format="%.2f", key="fs_purchase_add")
+                    else:
+                        fs_purchase = None
+                        
+                    fs_photo = st.file_uploader("Eigen foto uploaden (optioneel, overschrijft Brickset afbeelding)", type=["png", "jpg", "jpeg"], key="fs_photo_add")
+                
+                fs_submitted = st.form_submit_button("Set Toevoegen aan Te Koop")
+                
+                if fs_submitted:
+                    if not fs_num:
+                        st.error("Setnummer is verplicht!")
+                    elif fs_asking <= 0:
+                        st.error("Vraagprijs moet groter zijn dan €0!")
+                    else:
+                        with st.spinner("Gegevens en afbeelding ophalen..."):
+                            saved_img_path = None
+                            if fs_photo is not None:
+                                # Sla custom afbeelding op
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                ext = fs_photo.name.split(".")[-1]
+                                safe_num = clean_set_number(fs_num).split("-")[0]
+                                custom_img_name = f"custom_tekoop_{safe_num}_{timestamp}.{ext}"
+                                saved_img_path = os.path.join("images", custom_img_name).replace('\\', '/')
+                                try:
+                                    with open(saved_img_path, "wb") as f:
+                                        f.write(fs_photo.getbuffer())
+                                except Exception as e:
+                                    st.error(f"Fout bij het opslaan van de foto: {e}")
+                                    saved_img_path = None
+                                    
+                            success = add_for_sale_set(
+                                set_number=fs_num,
+                                name=fs_name if fs_name.strip() else None,
+                                purchase_price=fs_purchase,
+                                asking_price=fs_asking,
+                                image_path=saved_img_path,
+                                quantity=fs_qty,
+                                condition=fs_cond
+                            )
+                            if success:
+                                st.success(f"Set {fs_num} succesvol te koop aangeboden!")
+                                st.rerun()
+                            else:
+                                st.error("Er is iets fout gegaan bij het toevoegen van de set.")
+
+    # 2. WEERGAVE VAN SETS TE KOOP
+    if not fs_sets:
+        st.info("Er staan momenteel geen Lego sets te koop. Kom snel weer terug!")
+    else:
+        df_fs = pd.DataFrame(fs_sets)
+        
+        # Filteren en zoeken
+        col_fs1, col_fs2 = st.columns([3, 1])
+        with col_fs1:
+            fs_search = st.text_input("🔍 Zoek in te koop staande sets", "", key="fs_search_input")
+        with col_fs2:
+            fs_cond_options = ["Alle condities"] + sorted([str(c) for c in df_fs['condition'].unique() if c])
+            fs_cond_filter = st.selectbox("📝 Filter op Conditie", fs_cond_options, key="fs_cond_filter_select")
+            
+        filtered_fs = df_fs.copy()
+        if fs_search:
+            filtered_fs = filtered_fs[
+                filtered_fs['set_number'].str.contains(fs_search, case=False, na=False) |
+                filtered_fs['name'].str.contains(fs_search, case=False, na=False)
+            ]
+        if fs_cond_filter != "Alle condities":
+            filtered_fs = filtered_fs[filtered_fs['condition'] == fs_cond_filter]
+            
+        st.write(f"Toont {len(filtered_fs)} van de {len(df_fs)} sets te koop")
+        
+        # Grid layout voor te koop sets
+        cols_per_row = 4
+        rows_fs = [filtered_fs[i:i + cols_per_row] for i in range(0, len(filtered_fs), cols_per_row)]
+        
+        for row in rows_fs:
+            cols = st.columns(cols_per_row)
+            for idx, (_, item) in enumerate(row.iterrows()):
+                with cols[idx]:
+                    theme_display = item['theme'] if 'theme' in item else 'Onbekend'
+                    cond_display = item['condition'] if 'condition' in item else 'Nieuw (MISB)'
+                    retired_badge = "🕒 <span style='color:#E60012; font-weight:bold;'>Retired</span>" if ('retired' in item and item['retired'] == 1) else "🟢 <span style='color:#00cc44; font-weight:bold;'>Actief</span>"
+                    
+                    # Bereken marges als de gebruiker admin is
+                    margin_html = ""
+                    if is_admin:
+                        p_price = item['purchase_price']
+                        if p_price is not None and p_price > 0:
+                            margin_val = item['asking_price'] - p_price
+                            margin_roi = (margin_val / p_price) * 100
+                            margin_html = f"""
+                            <p style="margin:0; font-size: 0.9em; color: #555;">Aankoopprijs: € {p_price:.2f}</p>
+                            <p style="margin:0; font-weight:bold; color:#00cc44;">Marge: € {margin_val:+.2f} ({margin_roi:+.1f}% ROI)</p>
+                            """
+                        else:
+                            margin_html = '<p style="margin:0; font-size: 0.9em; color: #888; font-style:italic;">Aankoopprijs: Niet ingevuld</p>'
+                    
+                    st.markdown(f"""
+                    <div class="lego-card">
+                        <h4 style="margin:0; color:#E60012;">{item['name']}</h4>
+                        <p style="margin:5px 0; color:#666;">Set {item['set_number']} | {theme_display}</p>
+                        <h3 style="margin:10px 0; color:#333;">Vraagprijs: € {item['asking_price']:.2f}</h3>
+                        <p style="margin:0; font-size: 0.9em;">Beschikbaar aantal: {item['quantity']} stuks</p>
+                        <p style="margin:0; font-size: 0.85em; color:#555;">Conditie: <strong>{cond_display}</strong></p>
+                        <p style="margin:0; font-size: 0.85em;">Status: {retired_badge}</p>
+                        {margin_html if is_admin else ""}
+                    </div>
+                    """.replace("margin_html", margin_display if 'margin_display' in locals() else ""), unsafe_allow_html=True)
+                    
+                    # We gebruiken hier custom formatting voor de margin_html om string-vervanging correct te doen
+                    # Maar laten we het simpeler inbedden in de f-string hierboven! (Gefixt in volgende stap als dit te complex is, of we schrijven het direct uit)
+                    st.markdown(f"""
+                    <div style="margin-top: -15px; margin-bottom: 15px; padding: 0 15px;">
+                        {margin_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    img = get_lego_image_display(item['image_path'])
+                    st.image(img, use_container_width=True)
+                    
+                    # Bewerk & Verwijder knoppen onder elke set card (alleen zichtbaar voor admins)
+                    if is_admin:
+                        with st.expander("Opties ⚙️", key=f"exp_fs_{item['id']}"):
+                            edit_asking = st.number_input("Vraagprijs aanpassen", value=float(item['asking_price']), key=f"ea_{item['id']}")
+                            edit_qty = st.number_input("Aantal aanpassen", value=int(item['quantity']), min_value=1, step=1, key=f"eq_{item['id']}")
+                            edit_name = st.text_input("Naam aanpassen", value=item['name'], key=f"en_{item['id']}")
+                            
+                            has_p_price = item['purchase_price'] is not None
+                            edit_reg_purchase = st.checkbox("Aankoopprijs registreren/wijzigen?", value=has_p_price, key=f"er_check_{item['id']}")
+                            if edit_reg_purchase:
+                                p_val = float(item['purchase_price']) if has_p_price else 0.0
+                                edit_purchase = st.number_input("Aankoopprijs aanpassen", value=p_val, key=f"ep_{item['id']}")
+                            else:
+                                edit_purchase = None
+                                
+                            edit_theme_val = item['theme'] if 'theme' in item else "Onbekend"
+                            edit_theme_str = st.text_input("Thema aanpassen", value=edit_theme_val, key=f"et_{item['id']}")
+                            
+                            current_cond_val = item['condition'] if 'condition' in item else "Nieuw (MISB)"
+                            cond_options = ["Nieuw (MISB)", "Nieuw (BNIB)", "Gebruikt met doos", "Gebruikt zonder doos"]
+                            if current_cond_val not in cond_options:
+                                cond_options.append(current_cond_val)
+                            edit_cond_str = st.selectbox("Conditie aanpassen", cond_options, index=cond_options.index(current_cond_val), key=f"ec_{item['id']}")
+                            
+                            current_ret_val = int(item['retired']) if 'retired' in item else 0
+                            edit_ret_str = st.selectbox("Status aanpassen", ["Actief (In de handel)", "Retired (Uit de handel)"], index=current_ret_val, key=f"er_ret_{item['id']}")
+                            edit_ret_int = 1 if edit_ret_str == "Retired (Uit de handel)" else 0
+                            
+                            # Optie om foto te overschrijven
+                            edit_photo = st.file_uploader("Nieuwe foto uploaden (optioneel)", type=["png", "jpg", "jpeg"], key=f"eph_{item['id']}")
+                            
+                            col_upd, col_del = st.columns(2)
+                            with col_upd:
+                                if st.button("Opslaan", key=f"save_fs_{item['id']}"):
+                                    final_img = None
+                                    if edit_photo is not None:
+                                        # Sla custom afbeelding op
+                                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                        ext = edit_photo.name.split(".")[-1]
+                                        safe_num = clean_set_number(item['set_number']).split("-")[0]
+                                        custom_img_name = f"custom_tekoop_{safe_num}_{timestamp}.{ext}"
+                                        final_img = os.path.join("images", custom_img_name).replace('\\', '/')
+                                        with open(final_img, "wb") as f:
+                                            f.write(edit_photo.getbuffer())
+                                            
+                                    update_for_sale_set(
+                                        set_id=item['id'],
+                                        set_number=item['set_number'],
+                                        name=edit_name,
+                                        purchase_price=edit_purchase,
+                                        asking_price=edit_asking,
+                                        quantity=edit_qty,
+                                        condition=edit_cond_str,
+                                        theme=edit_theme_str,
+                                        retired=edit_ret_int
+                                    )
+                                    # Update apart het afbeeldingspad in de database als er een nieuwe is geüpload
+                                    if final_img:
+                                        conn = get_db_connection()
+                                        cursor = conn.cursor()
+                                        cursor.execute("UPDATE for_sale_sets SET image_path = ? WHERE id = ?", (final_img, item['id']))
+                                        conn.commit()
+                                        conn.close()
+                                        
+                                    st.success("Opgeslagen!")
+                                    st.rerun()
+                                    
+                            with col_del:
+                                if st.button("Verwijderen", key=f"del_fs_{item['id']}"):
+                                    delete_for_sale_set(item['id'])
+                                    st.warning("Set verwijderd!")
+                                    st.rerun()
+
 # --- SET TOEVOEGEN PAGE ---
 elif menu == "➕ Set Toevoegen":
+
     st.markdown("<h1 class='main-header'>➕ Handmatig Lego Set Toevoegen</h1>", unsafe_allow_html=True)
     
     if not is_admin:
