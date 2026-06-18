@@ -1,0 +1,10 @@
+# Database
+lego_inventory.db
+
+# Cache/Python
+__pycache__/
+*.pyc
+.venv/
+
+# Streamlit settings
+.streamlit/
