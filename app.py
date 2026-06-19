@@ -23,7 +23,8 @@ from utils import (
     add_for_sale_set,
     get_all_for_sale_sets,
     delete_for_sale_set,
-    update_for_sale_set
+    update_for_sale_set,
+    restore_missing_images
 )
 
 # Initialiseer database
@@ -123,7 +124,7 @@ if is_admin:
 
     # Back-up knop in sidebar
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📥 Back-up")
+    st.sidebar.subheader("📥 Back-up & Herstel")
     try:
         if os.path.exists("lego_inventory.db"):
             with open("lego_inventory.db", "rb") as file:
@@ -138,6 +139,16 @@ if is_admin:
             st.sidebar.warning("Geen database gevonden voor back-up.")
     except Exception as e:
         st.sidebar.error(f"Fout bij laden back-up: {e}")
+
+    # Herstel knop in sidebar
+    try:
+        if st.sidebar.button("📷 Herstel Ontbrekende Foto's", help="Downloadt automatisch alle ontbrekende productfoto's van de CDN"):
+            with st.spinner("Foto's herstellen..."):
+                restored = restore_missing_images()
+                st.sidebar.success(f"{restored} foto's succesvol hersteld!")
+                st.rerun()
+    except Exception as e:
+        st.sidebar.error(f"Fout bij herstellen foto's: {e}")
 
     # Danger zone in sidebar
     st.sidebar.markdown("---")
