@@ -183,18 +183,26 @@ if menu == "📊 Dashboard":
         most_expensive_set = df.loc[max_idx]['name'] if max_idx in df.index else "Geen"
         most_expensive_price = df.loc[max_idx]['current_price'] if max_idx in df.index else 0.0
         
+        is_logged_in = (st.session_state.logged_in_user is not None)
+
         # KPI Cards in kolommen
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Totaal Aantal Sets (Uniek / Totaal)", f"{total_unique_sets} uniek / {total_items} stuks")
         with col2:
-            st.metric("Totale Aankoopprijs (Investering)", f"€ {total_investment:.2f}")
+            if is_logged_in:
+                st.metric("Totale Aankoopprijs (Investering)", f"€ {total_investment:.2f}")
+            else:
+                st.metric("Totaal stuks in collectie", f"{total_items} stuks")
         with col3:
-            st.metric(
-                "Huidige Marktwaarde", 
-                f"€ {total_market_value:.2f}",
-                delta=f"€ {total_profit:.2f} ({roi:+.1f}%)"
-            )
+            if is_logged_in:
+                st.metric(
+                    "Huidige Marktwaarde", 
+                    f"€ {total_market_value:.2f}",
+                    delta=f"€ {total_profit:.2f} ({roi:+.1f}%)"
+                )
+            else:
+                st.metric("Huidige Marktwaarde", f"€ {total_market_value:.2f}")
         with col4:
             st.metric("Duurste Set (Marktwaarde)", f"€ {most_expensive_price:.2f}", help=most_expensive_set)
             
@@ -210,60 +218,95 @@ if menu == "📊 Dashboard":
         
         with chart_col1:
             st.subheader("Laatste 5 Aankopen")
-            latest_5 = df.head(5)[["set_number", "name", "purchase_date", "purchase_price", "current_price", "quantity"]].copy()
-            latest_5["Totaal Aankoop"] = latest_5["purchase_price"] * latest_5["quantity"]
-            latest_5["Totaal Waarde"] = latest_5["current_price"] * latest_5["quantity"]
-            latest_5["Winst / Verlies"] = latest_5["Totaal Waarde"] - latest_5["Totaal Aankoop"]
-            
-            # Format overzichtelijke kolommen
-            display_5 = latest_5[["set_number", "name", "purchase_date", "Totaal Aankoop", "Totaal Waarde", "Winst / Verlies"]].copy()
-            display_5.columns = ["Setnummer", "Naam", "Aankoopdatum", "Investering (€)", "Marktwaarde (€)", "Winst/Verlies (€)"]
-            
-            st.dataframe(display_5, use_container_width=True, hide_index=True)
+            if is_logged_in:
+                latest_5 = df.head(5)[["set_number", "name", "purchase_date", "purchase_price", "current_price", "quantity"]].copy()
+                latest_5["Totaal Aankoop"] = latest_5["purchase_price"] * latest_5["quantity"]
+                latest_5["Totaal Waarde"] = latest_5["current_price"] * latest_5["quantity"]
+                latest_5["Winst / Verlies"] = latest_5["Totaal Waarde"] - latest_5["Totaal Aankoop"]
+                
+                # Format overzichtelijke kolommen
+                display_5 = latest_5[["set_number", "name", "purchase_date", "Totaal Aankoop", "Totaal Waarde", "Winst / Verlies"]].copy()
+                display_5.columns = ["Setnummer", "Naam", "Aankoopdatum", "Investering (€)", "Marktwaarde (€)", "Winst/Verlies (€)"]
+                
+                st.dataframe(display_5, use_container_width=True, hide_index=True)
+            else:
+                latest_5 = df.head(5)[["set_number", "name", "purchase_date", "current_price", "quantity"]].copy()
+                latest_5["Totaal Waarde"] = latest_5["current_price"] * latest_5["quantity"]
+                
+                # Format overzichtelijke kolommen
+                display_5 = latest_5[["set_number", "name", "purchase_date", "Totaal Waarde"]].copy()
+                display_5.columns = ["Setnummer", "Naam", "Aankoopdatum", "Marktwaarde (€)"]
+                
+                st.dataframe(display_5, use_container_width=True, hide_index=True)
             
         with chart_col2:
-            st.subheader("Aankoopwaarde vs Huidige Marktwaarde per Jaar")
             df['year'] = pd.to_datetime(df['purchase_date']).dt.year
             df['total_cost'] = df['purchase_price'] * df['quantity']
             df['total_value'] = df['current_price'] * df['quantity']
             
-            yearly_stats = df.groupby('year')[['total_cost', 'total_value']].sum().reset_index()
-            # Hernoem voor de grafieklegenda
-            yearly_stats.columns = ["Jaar", "Investering (€)", "Huidige Marktwaarde (€)"]
-            st.bar_chart(yearly_stats, x='Jaar', y=["Investering (€)", "Huidige Marktwaarde (€)"], color=["#FF0000", "#00FF00"])
+            if is_logged_in:
+                st.subheader("Aankoopwaarde vs Huidige Marktwaarde per Jaar")
+                yearly_stats = df.groupby('year')[['total_cost', 'total_value']].sum().reset_index()
+                # Hernoem voor de grafieklegenda
+                yearly_stats.columns = ["Jaar", "Investering (€)", "Huidige Marktwaarde (€)"]
+                st.bar_chart(yearly_stats, x='Jaar', y=["Investering (€)", "Huidige Marktwaarde (€)"], color=["#FF0000", "#00FF00"])
+            else:
+                st.subheader("Huidige Marktwaarde per Jaar")
+                yearly_stats = df.groupby('year')[['total_value']].sum().reset_index()
+                # Hernoem voor de grafieklegenda
+                yearly_stats.columns = ["Jaar", "Huidige Marktwaarde (€)"]
+                st.bar_chart(yearly_stats, x='Jaar', y=["Huidige Marktwaarde (€)"], color=["#00FF00"])
 
         # Thema & Status Analyse Sectie
         st.markdown("---")
         st.subheader("🎨 Thema & Portfolio Analyse")
         theme_col1, theme_col2 = st.columns(2)
         
+        # Gebruik 'theme' indien beschikbaar, anders 'Onbekend'
+        theme_col = 'theme' if 'theme' in df.columns else 'Onbekend'
+        if theme_col not in df.columns:
+            df[theme_col] = 'Onbekend'
+            
         with theme_col1:
-            st.markdown("#### Waarde en Investering per Lego Thema")
             df['total_cost'] = df['purchase_price'] * df['quantity']
             df['total_value'] = df['current_price'] * df['quantity']
-            # Gebruik 'theme' indien beschikbaar, anders 'Onbekend'
-            theme_col = 'theme' if 'theme' in df.columns else 'Onbekend'
-            if theme_col not in df.columns:
-                df[theme_col] = 'Onbekend'
             
-            theme_stats = df.groupby(theme_col)[['total_cost', 'total_value']].sum().reset_index()
-            theme_stats.columns = ["Thema", "Investering (€)", "Huidige Marktwaarde (€)"]
-            st.bar_chart(theme_stats, x='Thema', y=["Investering (€)", "Huidige Marktwaarde (€)"], color=["#FFD500", "#E60012"])
+            if is_logged_in:
+                st.markdown("#### Waarde en Investering per Lego Thema")
+                theme_stats = df.groupby(theme_col)[['total_cost', 'total_value']].sum().reset_index()
+                theme_stats.columns = ["Thema", "Investering (€)", "Huidige Marktwaarde (€)"]
+                st.bar_chart(theme_stats, x='Thema', y=["Investering (€)", "Huidige Marktwaarde (€)"], color=["#FFD500", "#E60012"])
+            else:
+                st.markdown("#### Marktwaarde per Lego Thema")
+                theme_stats = df.groupby(theme_col)[['total_value']].sum().reset_index()
+                theme_stats.columns = ["Thema", "Huidige Marktwaarde (€)"]
+                st.bar_chart(theme_stats, x='Thema', y=["Huidige Marktwaarde (€)"], color=["#E60012"])
             
         with theme_col2:
             st.markdown("#### Status & Rendement per Thema")
-            theme_summary = df.groupby(theme_col).agg(
-                Unieke_Sets=('id', 'count'),
-                Totaal_Stuks=('quantity', 'sum'),
-                Investering=('total_cost', 'sum'),
-                Huidige_Waarde=('total_value', 'sum')
-            ).reset_index()
-            theme_summary['Winst / Verlies'] = theme_summary['Huidige_Waarde'] - theme_summary['Investering']
-            theme_summary['ROI (%)'] = (theme_summary['Winst / Verlies'] / theme_summary['Investering'] * 100).round(1)
-            
-            # Hernoem en formatteer
-            theme_summary.columns = ["Thema", "Sets", "Stuks", "Investering (€)", "Marktwaarde (€)", "Winst/Verlies (€)", "ROI (%)"]
-            st.dataframe(theme_summary, use_container_width=True, hide_index=True)
+            if is_logged_in:
+                theme_summary = df.groupby(theme_col).agg(
+                    Unieke_Sets=('id', 'count'),
+                    Totaal_Stuks=('quantity', 'sum'),
+                    Investering=('total_cost', 'sum'),
+                    Huidige_Waarde=('total_value', 'sum')
+                ).reset_index()
+                theme_summary['Winst / Verlies'] = theme_summary['Huidige_Waarde'] - theme_summary['Investering']
+                theme_summary['ROI (%)'] = (theme_summary['Winst / Verlies'] / theme_summary['Investering'] * 100).round(1)
+                
+                # Hernoem en formatteer
+                theme_summary.columns = ["Thema", "Sets", "Stuks", "Investering (€)", "Marktwaarde (€)", "Winst/Verlies (€)", "ROI (%)"]
+                st.dataframe(theme_summary, use_container_width=True, hide_index=True)
+            else:
+                theme_summary = df.groupby(theme_col).agg(
+                    Unieke_Sets=('id', 'count'),
+                    Totaal_Stuks=('quantity', 'sum'),
+                    Huidige_Waarde=('total_value', 'sum')
+                ).reset_index()
+                
+                # Hernoem en formatteer
+                theme_summary.columns = ["Thema", "Sets", "Stuks", "Marktwaarde (€)"]
+                st.dataframe(theme_summary, use_container_width=True, hide_index=True)
 
 # --- MIJN VOORRAAD PAGE ---
 elif menu == "🧱 Mijn Voorraad":
@@ -309,6 +352,8 @@ elif menu == "🧱 Mijn Voorraad":
         # Weergave opties: Galerij of Lijst
         view_mode = st.radio("Weergavemodus", ["🖼️ Galerij", "📋 Gedetailleerde Lijst"], horizontal=True)
         
+        is_logged_in = (st.session_state.logged_in_user is not None)
+
         if view_mode == "🖼️ Galerij":
             # Grid layout voor sets
             cols_per_row = 4
@@ -329,15 +374,16 @@ elif menu == "🧱 Mijn Voorraad":
                         cond_display = item['condition'] if 'condition' in item else 'Nieuw (MISB)'
                         retired_badge = "🕒 <span style='color:#E60012; font-weight:bold;'>Retired</span>" if ('retired' in item and item['retired'] == 1) else "🟢 <span style='color:#00cc44; font-weight:bold;'>Actief</span>"
                         
+                        purchase_price_html = f'<p style="margin:0; font-size: 0.9em;">Aankoopprijs: € {item["purchase_price"]:.2f} (x{item["quantity"]})</p>' if is_logged_in else ""
+                        yield_html = f'<p style="margin:0; font-weight:bold; color:{profit_color};">Rendement: € {profit_item:+.2f} ({roi_item:+.1f}%)</p>' if is_logged_in else ""
+
                         st.markdown(f"""
                         <div class="lego-card">
                             <h4 style="margin:0; color:#E60012;">{item['name']}</h4>
                             <p style="margin:5px 0; color:#666;">Set {item['set_number']} | {theme_display}</p>
-                            <p style="margin:0; font-size: 0.9em;">Aankoopprijs: € {item['purchase_price']:.2f} (x{item['quantity']})</p>
+                            {purchase_price_html}
                             <p style="margin:0; font-size: 0.9em;">Huidige marktprijs: € {item['current_price']:.2f}</p>
-                            <p style="margin:0; font-weight:bold; color:{profit_color};">
-                                Rendement: € {profit_item:+.2f} ({roi_item:+.1f}%)
-                            </p>
+                            {yield_html}
                             <p style="margin:0; font-size: 0.85em; color:#555;">Conditie: <strong>{cond_display}</strong></p>
                             <p style="margin:0; font-size: 0.85em;">Status: {retired_badge}</p>
                             <p style="font-size:0.85em; margin:5px 0 0 0; color:#888;">Gekocht: {item['purchase_date']}</p>
@@ -385,33 +431,42 @@ elif menu == "🧱 Mijn Voorraad":
                                     
         else:
             # Gedetailleerde lijstweergave
-            cols_to_use = ["id", "set_number", "name", "purchase_date", "purchase_price", "current_price", "quantity"]
+            if is_logged_in:
+                cols_to_use = ["id", "set_number", "name", "purchase_date", "purchase_price", "current_price", "quantity"]
+            else:
+                cols_to_use = ["id", "set_number", "name", "purchase_date", "current_price", "quantity"]
+                
             for col in ["theme", "condition", "retired"]:
                 if col in filtered_df.columns:
                     cols_to_use.append(col)
                     
             display_df = filtered_df[cols_to_use].copy()
-            display_df["Totaal Aankoop (€)"] = display_df["purchase_price"] * display_df["quantity"]
-            display_df["Totaal Marktwaarde (€)"] = display_df["current_price"] * display_df["quantity"]
-            display_df["Winst/Verlies (€)"] = display_df["Totaal Marktwaarde (€)"] - display_df["Totaal Aankoop (€)"]
+            
+            if is_logged_in:
+                display_df["Totaal Aankoop (€)"] = display_df["purchase_price"] * display_df["quantity"]
+                display_df["Totaal Marktwaarde (€)"] = display_df["current_price"] * display_df["quantity"]
+                display_df["Winst/Verlies (€)"] = display_df["Totaal Marktwaarde (€)"] - display_df["Totaal Aankoop (€)"]
+            else:
+                display_df["Totaal Marktwaarde (€)"] = display_df["current_price"] * display_df["quantity"]
             
             if "retired" in display_df.columns:
                 display_df["retired"] = display_df["retired"].map({1: "🕒 Retired", 0: "🟢 Actief"})
             
+            rename_dict = {
+                "set_number": "Setnummer",
+                "name": "Setnaam",
+                "purchase_date": "Aankoopdatum",
+                "current_price": "Marktprijs p/s (€)",
+                "quantity": "Aantal",
+                "theme": "Thema",
+                "condition": "Conditie",
+                "retired": "Status"
+            }
+            if is_logged_in:
+                rename_dict["purchase_price"] = "Aankoopprijs (€)"
+                
             st.dataframe(
-                display_df.rename(
-                    columns={
-                        "set_number": "Setnummer",
-                        "name": "Setnaam",
-                        "purchase_date": "Aankoopdatum",
-                        "purchase_price": "Aankoopprijs (€)",
-                        "current_price": "Marktprijs p/s (€)",
-                        "quantity": "Aantal",
-                        "theme": "Thema",
-                        "condition": "Conditie",
-                        "retired": "Status"
-                    }
-                ),
+                display_df.rename(columns=rename_dict),
                 use_container_width=True,
                 hide_index=True
             )
