@@ -563,8 +563,8 @@ def update_for_sale_set(set_id, set_number, name, purchase_price, asking_price, 
     conn.close()
     return True
 
-def restore_missing_images():
-    """Downloadt alle ontbrekende setafbeeldingen opnieuw van de CDN"""
+def restore_missing_images(force=True):
+    """Downloadt alle ontbrekende of foute setafbeeldingen opnieuw van de CDN"""
     sets = get_all_sets() + get_all_for_sale_sets()
     restored_count = 0
     os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -573,11 +573,18 @@ def restore_missing_images():
         img_path = s.get("image_path")
         if img_path:
             normalized_path = img_path.replace('\\', '/')
-            if not os.path.exists(normalized_path) and "custom_tekoop_" not in normalized_path:
-                set_num = s["set_number"]
-                fetch_lego_details_and_image(set_num)
-                if os.path.exists(normalized_path):
-                    restored_count += 1
+            if "custom_tekoop_" not in normalized_path:
+                if force and os.path.exists(normalized_path):
+                    try:
+                        os.remove(normalized_path)
+                    except Exception as e:
+                        print(f"Kon {normalized_path} niet verwijderen voor her-download: {e}")
+                
+                if not os.path.exists(normalized_path):
+                    set_num = s["set_number"]
+                    fetch_lego_details_and_image(set_num)
+                    if os.path.exists(normalized_path):
+                        restored_count += 1
     return restored_count
 
 def get_all_sets():
