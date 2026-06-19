@@ -1,6 +1,9 @@
 # Database
 lego_inventory.db
 
+# Images
+images/
+
 # Cache/Python
 __pycache__/
 *.pyc
