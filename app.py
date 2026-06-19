@@ -374,21 +374,15 @@ elif menu == "🧱 Mijn Voorraad":
                         cond_display = item['condition'] if 'condition' in item else 'Nieuw (MISB)'
                         retired_badge = "🕒 <span style='color:#E60012; font-weight:bold;'>Retired</span>" if ('retired' in item and item['retired'] == 1) else "🟢 <span style='color:#00cc44; font-weight:bold;'>Actief</span>"
                         
-                        purchase_price_html = f'<p style="margin:0; font-size: 0.9em;">Aankoopprijs: € {item["purchase_price"]:.2f} (x{item["quantity"]})</p>' if is_logged_in else ""
-                        yield_html = f'<p style="margin:0; font-weight:bold; color:{profit_color};">Rendement: € {profit_item:+.2f} ({roi_item:+.1f}%)</p>' if is_logged_in else ""
-
-                        st.markdown(f"""
-                        <div class="lego-card">
-                            <h4 style="margin:0; color:#E60012;">{item['name']}</h4>
-                            <p style="margin:5px 0; color:#666;">Set {item['set_number']} | {theme_display}</p>
-                            {purchase_price_html}
-                            <p style="margin:0; font-size: 0.9em;">Huidige marktprijs: € {item['current_price']:.2f}</p>
-                            {yield_html}
-                            <p style="margin:0; font-size: 0.85em; color:#555;">Conditie: <strong>{cond_display}</strong></p>
-                            <p style="margin:0; font-size: 0.85em;">Status: {retired_badge}</p>
-                            <p style="font-size:0.85em; margin:5px 0 0 0; color:#888;">Gekocht: {item['purchase_date']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        card_html = f'<div class="lego-card"><h4 style="margin:0; color:#E60012;">{item["name"]}</h4><p style="margin:5px 0; color:#666;">Set {item["set_number"]} | {theme_display}</p>'
+                        if is_logged_in:
+                            card_html += f'<p style="margin:0; font-size: 0.9em;">Aankoopprijs: € {item["purchase_price"]:.2f} (x{item["quantity"]})</p>'
+                        card_html += f'<p style="margin:0; font-size: 0.9em;">Huidige marktprijs: € {item["current_price"]:.2f}</p>'
+                        if is_logged_in:
+                            card_html += f'<p style="margin:0; font-weight:bold; color:{profit_color};">Rendement: € {profit_item:+.2f} ({roi_item:+.1f}%)</p>'
+                        card_html += f'<p style="margin:0; font-size: 0.85em; color:#555;">Conditie: <strong>{cond_display}</strong></p><p style="margin:0; font-size: 0.85em;">Status: {retired_badge}</p><p style="font-size:0.85em; margin:5px 0 0 0; color:#888;">Gekocht: {item["purchase_date"]}</p></div>'
+                        
+                        st.markdown(card_html, unsafe_allow_html=True)
                         
                         img = get_lego_image_display(item['image_path'])
                         st.image(img, use_container_width=True)
@@ -635,25 +629,12 @@ elif menu == "🏷️ Te Koop":
                         else:
                             margin_html = '<p style="margin:0; font-size: 0.9em; color: #888; font-style:italic;">Aankoopprijs: Niet ingevuld</p>'
                     
-                    st.markdown(f"""
-                    <div class="lego-card">
-                        <h4 style="margin:0; color:#E60012;">{item['name']}</h4>
-                        <p style="margin:5px 0; color:#666;">Set {item['set_number']} | {theme_display}</p>
-                        <h3 style="margin:10px 0; color:#333;">Vraagprijs: € {item['asking_price']:.2f}</h3>
-                        <p style="margin:0; font-size: 0.9em;">Beschikbaar aantal: {item['quantity']} stuks</p>
-                        <p style="margin:0; font-size: 0.85em; color:#555;">Conditie: <strong>{cond_display}</strong></p>
-                        <p style="margin:0; font-size: 0.85em;">Status: {retired_badge}</p>
-                        {margin_html if is_admin else ""}
-                    </div>
-                    """.replace("margin_html", margin_display if 'margin_display' in locals() else ""), unsafe_allow_html=True)
+                    fs_card_html = f'<div class="lego-card"><h4 style="margin:0; color:#E60012;">{item["name"]}</h4><p style="margin:5px 0; color:#666;">Set {item["set_number"]} | {theme_display}</p><h3 style="margin:10px 0; color:#333;">Vraagprijs: € {item["asking_price"]:.2f}</h3><p style="margin:0; font-size: 0.9em;">Beschikbaar aantal: {item["quantity"]} stuks</p><p style="margin:0; font-size: 0.85em; color:#555;">Conditie: <strong>{cond_display}</strong></p><p style="margin:0; font-size: 0.85em;">Status: {retired_badge}</p>'
+                    if is_admin and margin_html:
+                        fs_card_html += f'<div style="margin-top:10px; border-top:1px solid #eee; padding-top:10px;">{margin_html}</div>'
+                    fs_card_html += '</div>'
                     
-                    # We gebruiken hier custom formatting voor de margin_html om string-vervanging correct te doen
-                    # Maar laten we het simpeler inbedden in de f-string hierboven! (Gefixt in volgende stap als dit te complex is, of we schrijven het direct uit)
-                    st.markdown(f"""
-                    <div style="margin-top: -15px; margin-bottom: 15px; padding: 0 15px;">
-                        {margin_html}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(fs_card_html, unsafe_allow_html=True)
                     
                     img = get_lego_image_display(item['image_path'])
                     st.image(img, use_container_width=True)
