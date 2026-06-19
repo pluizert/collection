@@ -121,6 +121,24 @@ if is_admin:
             st.sidebar.success("Marktprijzen succesvol bijgewerkt!")
             st.rerun()
 
+    # Back-up knop in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📥 Back-up")
+    try:
+        if os.path.exists("lego_inventory.db"):
+            with open("lego_inventory.db", "rb") as file:
+                st.sidebar.download_button(
+                    label="📥 Download Database Back-up",
+                    data=file,
+                    file_name="lego_inventory.db",
+                    mime="application/x-sqlite3",
+                    help="Download een volledige back-up van je database naar je computer"
+                )
+        else:
+            st.sidebar.warning("Geen database gevonden voor back-up.")
+    except Exception as e:
+        st.sidebar.error(f"Fout bij laden back-up: {e}")
+
     # Danger zone in sidebar
     st.sidebar.markdown("---")
     st.sidebar.markdown("<p style='color:red; font-weight:bold;'>⚠️ Danger Zone</p>", unsafe_allow_html=True)
